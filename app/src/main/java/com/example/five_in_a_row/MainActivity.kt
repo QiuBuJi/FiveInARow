@@ -2,6 +2,7 @@ package com.example.five_in_a_row
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Point
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
@@ -18,6 +19,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         lateinit var tvTitle: TextView
+        lateinit var mTvCircle: TextView
+        val sizeScreen = Point()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,6 +28,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         tvTitle = main_tvTitle
+        mTvCircle = main_tvCircle
+
+        windowManager.defaultDisplay.getSize(sizeScreen)
 
         val adapter = Adapter(this, main_rvTable)
         main_rvTable.adapter = adapter
@@ -53,12 +59,24 @@ class MainActivity : AppCompatActivity() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
             val from = LayoutInflater.from(context)
                 .inflate(R.layout.sample_item_circle, parent, false)
+            onceSetHeight()
             return Holder(from)
+        }
+
+        var once: Boolean = false
+        /**设置棋盘高度*/
+        private fun onceSetHeight() {
+            if (once) return
+            once = true
+            val size = (rvTable.width / width) * height
+//            val remain = sizeScreen.y - rvTable.y
+            // FIXME: 2020.2.5 dynamic set the table height
+//            if (size < remain) rvTable.layoutParams.height = size
         }
 
         override fun getItemCount(): Int = table.size
 
-        //******************************************************************************************
+        //*********************************** Game Method ******************************************
         /**获取该类型的资源*/
         private val Circle.TYPE.resource: Int
             get() {
@@ -213,9 +231,8 @@ class MainActivity : AppCompatActivity() {
             val linesOut = ArrayList<ArrayList<Circle>>()
             val lines = getLines { it.circle.type == this.type }
 
-            for (line in lines) if (line.size >= 5) {
-                linesOut.add(line)
-            }
+            //大于等于5颗棋子在一条直线上，判断为赢
+            for (line in lines) if (line.size >= 5) linesOut.add(line)
             return if (linesOut.isNotEmpty()) linesOut else null
         }
 
@@ -231,11 +248,11 @@ class MainActivity : AppCompatActivity() {
                 val size = rvTable.width / width
                 itemView.layoutParams.width = size
                 itemView.layoutParams.height = size
-                rvTable.layoutParams.height = height * size
                 tvTitle.text = "${oldType.alter.name1}下棋："
 
                 tvCircle.setTextColor(circle.textColor)
                 tvCircle.setBackgroundResource(circle.type.resource)
+                mTvCircle.setBackgroundResource(oldType.alter.resource)
                 itemView.setBackgroundColor(Color.TRANSPARENT)
                 tvCircle.setOnClickListener {
                     //设置不能在同一个地方重复下棋
@@ -258,7 +275,7 @@ class MainActivity : AppCompatActivity() {
         private fun tableChecking(circle: Circle) {
             val detectWon = circle.detectWon()
 
-            //有赢的数据，则直线赢程序
+            //有赢的数据，则执行赢程序
             detectWon?.let {
                 Thread {
                     for (line in it) {
@@ -276,9 +293,8 @@ class MainActivity : AppCompatActivity() {
             }
 
         }
-    }
+    }//**************************************** Adapter End ****************************************
 
-    //******************************************************************************************
     class Holder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCircle: TextView = itemView.findViewById(R.id.circle_tvTxt)
     }
