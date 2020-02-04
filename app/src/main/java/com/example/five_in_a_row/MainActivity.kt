@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Handler
+import android.os.Message
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -29,9 +31,10 @@ class MainActivity : AppCompatActivity() {
         main_rvTable.layoutManager = GridLayoutManager(this, adapter.width)
     }
 
+    //*************************************** Adapter **********************************************
     class Adapter(
         private val context: Context,
-        val rvTable: RecyclerView,
+        private val rvTable: RecyclerView,
         val width: Int = 10,
         val height: Int = 16
     ) : RecyclerView.Adapter<Holder>() {
@@ -50,69 +53,208 @@ class MainActivity : AppCompatActivity() {
 
         override fun getItemCount(): Int = table.size
 
-        private val CircleType.resource: Int
+        //******************************************************************************************
+        private val Circle.TYPE.resource: Int
             get() {
                 return when (this) {
-                    CircleType.Black -> R.drawable.ic_bg_circle_black
-                    CircleType.White -> R.drawable.ic_bg_circle_white
+                    Circle.TYPE.Black -> R.drawable.ic_bg_circle_black
+                    Circle.TYPE.White -> R.drawable.ic_bg_circle_white
+                    Circle.TYPE.Test -> R.drawable.ic_bg_circle_blue
                     else -> R.drawable.ic_bg_rectangle
                 }
             }
 
-        private val CircleType.alter: CircleType
-            get() {
-                return when (this) {
-                    CircleType.White -> CircleType.Black
-                    else -> CircleType.White
+        /**通知数据改变了*/
+        private fun Circle.notifyChange() {
+            val position = table.indexOf(this)
+            if (position >= 0) notifyItemChanged(position)
+        }
+
+        /**通知数据改变了*/
+        private fun CircleD.notifyChange() = circle.notifyChange()
+
+        /**遍历包围该位置的所有数据*/
+        private fun Circle.traverseSurrounds(action: (circleD: CircleD) -> Boolean) {
+            val position = table.indexOf(this)
+            if (position < 0) return
+
+            for (times in -1..1) {
+                val y = position + (times * width)
+                val cx = y / width
+                if (y < 0) continue//上越界
+
+                for (x in -1..1) {
+                    val index = y + x
+                    val cxTemp = index / width
+
+                    //规避越界错误
+                    if ((cx != cxTemp) ||//左右越界
+                        (times == 0 && x == 0) ||//中间
+                        (index < 0) || (index >= table.size)//上下越界
+                    ) continue
+
+                    val circleD = CircleD(table[index], getDirection(x, times))
+                    if (!action(circleD)) return
                 }
             }
+        }
 
-        private var oldType: CircleType = CircleType.White
+        /**转换为方位数据*/
+        private fun getDirection(x: Int, y: Int): Direction {
+            return if (x == 0 && y == 0) Direction.None
+            else if (x < 0) {
+                when {
+                    y == 0 -> Direction.Left
+                    y < 0 -> Direction.LeftTop
+                    else -> Direction.LeftBottom
+                }
+            } else {
+                when {
+                    y == 0 -> Direction.Right
+                    y < 0 -> Direction.RightTop
+                    else -> Direction.RightBottom
+                }
+            }
+        }
+
+        /**取包围该位置的所有数据*/
+        private fun Circle.getSurrounds(): ArrayList<CircleD> {
+            val surrounds = ArrayList<CircleD>()
+
+            traverseSurrounds {
+                surrounds.add(it)
+                true
+            }
+            return surrounds
+        }
+
+        /**往该方向前进*/
+        private fun CircleD.goDirection(action: (circleD: CircleD) -> Boolean) {
+            circle.traverseSurrounds {
+                if (it.direction == direction) {
+                    if (action(it)) it.goDirection(action)
+                    false
+                } else true
+            }
+        }
+
+        //******************************************************************************************
+        private var oldType: Circle.TYPE = Circle.TYPE.White
+
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val circle = table[position]
             holder.run {
+                //显示数据到界面
                 tvCircle.text = if (circle.showText) circle.text else ""
                 val size = rvTable.width / width
-                holder.itemView.layoutParams.width = size
-                holder.itemView.layoutParams.height = size
+                itemView.layoutParams.width = size
+                itemView.layoutParams.height = size
+                rvTable.layoutParams.height = height * size
                 tvTitle.text = "${oldType.alter.name1}下棋："
 
 
                 tvCircle.setBackgroundResource(circle.type.resource)
+                itemView.setBackgroundColor(Color.TRANSPARENT)
                 tvCircle.setOnClickListener {
                     if (circle.show) return@setOnClickListener
 
                     oldType = oldType.alter
                     circle.show = true
                     circle.type = oldType
-                    notifyItemChanged(position)
+                    tableChecking(circle)
+                    circle.notifyChange()
                 }
             }
         }
 
+        private val handler = Handler {
+            val circle = it.obj as Circle
+            circle.type = Circle.TYPE.Test
+            circle.notifyChange()
+            true
+        }
+
+        /**棋盘检查,检查哪方胜利*/
+        private fun tableChecking(circle: Circle) {
+            val surrounds = circle.getSurrounds()
+
+            Thread {
+                for (circleD in surrounds) {
+                    val msg = Message()
+                    msg.obj = circleD.circle
+                    handler.sendMessage(msg)
+                    Thread.sleep(100)
+
+                    circleD.goDirection {
+                        val msg = Message()
+                        msg.obj = it.circle
+
+                        handler.sendMessage(msg)
+                        Thread.sleep(100)
+                        true
+                    }
+                }
+            }.start()
+
+
+        }
+
+
     }
 
+    //******************************************************************************************
     class Holder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCircle: TextView = itemView.findViewById(R.id.circle_tvTxt)
     }
 }
 
-data class Circle(
-    var type: CircleType = CircleType.None,
+//*************************************** Self Define **********************************************
+open class Circle(
+    var type: TYPE = TYPE.None,
     var show: Boolean = false,
     var showText: Boolean = false,
     var text: String = ""
-)
+) {
+    override fun toString(): String = "type=$type  show=$show  showText=$showText  text=$text"
 
-enum class CircleType {
-    None, White, Black;
+    enum class TYPE {
+        None, White, Black, Test;
 
-    val name1: String
-        get() {
-            return when (this) {
-                White -> "白棋"
-                Black -> "黑棋"
-                else -> "空"
+        override fun toString(): String = name
+
+        val name1: String
+            get() {
+                return when (this) {
+                    White -> "白棋"
+                    Black -> "黑棋"
+                    else -> "空"
+                }
             }
-        }
+
+        val alter: TYPE
+            get() {
+                return when (this) {
+                    White -> Black
+                    else -> White
+                }
+            }
+    }
+}
+
+class CircleD(val circle: Circle, var direction: Direction) {
+
+    override fun toString(): String = "direction = $direction"
+}
+
+enum class Direction {
+    None,
+    Left,
+    Top,
+    Right,
+    Bottom,
+
+    LeftTop,
+    LeftBottom,
+    RightTop,
+    RightBottom
 }
