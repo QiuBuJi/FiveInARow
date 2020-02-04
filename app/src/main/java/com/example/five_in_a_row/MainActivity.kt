@@ -30,6 +30,7 @@ class MainActivity : AppCompatActivity() {
         main_rvTable.adapter = adapter
         main_rvTable.layoutManager = GridLayoutManager(this, adapter.width)
 
+        //清空棋盘
         main_btClear.setOnClickListener {
             main_rvTable.swapAdapter(Adapter(this, main_rvTable), true)
         }
@@ -58,6 +59,7 @@ class MainActivity : AppCompatActivity() {
         override fun getItemCount(): Int = table.size
 
         //******************************************************************************************
+        /**获取该类型的资源*/
         private val Circle.TYPE.resource: Int
             get() {
                 return when (this) {
@@ -68,6 +70,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+        /**通知数据改变*/
         private val handler = Handler {
             if (it.arg1 >= 0) notifyItemChanged(it.arg1)
             true
@@ -75,8 +78,6 @@ class MainActivity : AppCompatActivity() {
 
         /**通知数据改变了*/
         private fun Circle.notifyChange() {
-            type = Circle.TYPE.Test // TODO: 2020.2.5 test
-
             val position = table.indexOf(this)
             val msg = Message()
             msg.arg1 = position
@@ -148,42 +149,106 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**往该方向前进*/
-        private fun CircleD.goDirection(action: (circleD: CircleD) -> Boolean) {
+        private fun CircleD.traverseDirection(action: (circleD: CircleD) -> Boolean) {
             if (action(this)) {
 
                 circle.traverseSurrounds {
                     if (it.direction == direction) {
-                        it.goDirection(action)
+                        it.traverseDirection(action)
                         false
                     } else true
                 }
             }
         }
 
+        /**取所有通过该点的直线*/
+        private fun Circle.getLines(): ArrayList<ArrayList<Circle>> {
+            return getLines { true }
+        }
+
+        /**取所有通过该点的直线*/
+        private fun Circle.getLines(action: (circleD: CircleD) -> Boolean): ArrayList<ArrayList<Circle>> {
+            val lines = ArrayList<ArrayList<CircleD>>()
+            val linesOut = ArrayList<ArrayList<Circle>>()
+
+            //收集该点发散出去的所有直线
+            traverseSurrounds { it ->
+                val line = ArrayList<CircleD>()
+                //收集棋子为直线
+                it.traverseDirection {
+                    if (action(it)) {
+                        line.add(it)
+                        true
+                    } else false
+                }
+                if (line.isNotEmpty()) lines.add(line)//不要空的
+                true
+            }
+
+            //融合该直线与直线延长线上的直线
+            while (lines.isNotEmpty()) {
+                val line = lines.removeAt(0)
+                val not = !line[0].direction//相反的直线类型
+                val circles = ArrayList<Circle>()
+
+                line.reverse()//反向
+                for (circleD in line) circles.add(circleD.circle)
+
+                if (lines.isEmpty()) circles.add(this)//添加自己
+                for (lineTemp in lines) {
+                    if (lineTemp[0].direction == not) {
+                        circles.add(this)//添加自己
+                        for (circleD in lineTemp) circles.add(circleD.circle)//添加剩下的
+                        lines.remove(lineTemp)
+                        break
+                    }
+                }
+                linesOut.add(circles)
+            }
+            return linesOut
+        }
+
+        /**检测赢的一方*/
+        private fun Circle.detectWon(): ArrayList<ArrayList<Circle>>? {
+            val linesOut = ArrayList<ArrayList<Circle>>()
+            val lines = getLines { it.circle.type == this.type }
+
+            for (line in lines) if (line.size >= 5) {
+                linesOut.add(line)
+            }
+            return if (linesOut.isNotEmpty()) linesOut else null
+        }
+
         //******************************************************************************************
         private var oldType: Circle.TYPE = Circle.TYPE.White
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
-            val circle = table[position]
             holder.run {
+                val circle = table[position]
+
                 //显示数据到界面
-                tvCircle.text = if (circle.showText) circle.text else ""
+                tvCircle.text = circle.text
                 val size = rvTable.width / width
                 itemView.layoutParams.width = size
                 itemView.layoutParams.height = size
                 rvTable.layoutParams.height = height * size
                 tvTitle.text = "${oldType.alter.name1}下棋："
 
-
+                tvCircle.setTextColor(circle.textColor)
                 tvCircle.setBackgroundResource(circle.type.resource)
                 itemView.setBackgroundColor(Color.TRANSPARENT)
                 tvCircle.setOnClickListener {
+                    //设置不能在同一个地方重复下棋
                     if (circle.show) return@setOnClickListener
 
+                    //保存上一次，下的是什么棋
                     oldType = oldType.alter
                     circle.show = true
                     circle.type = oldType
+
+                    //检查棋盘
                     tableChecking(circle)
+                    //通知该位置刷新显示的数据
                     circle.notifyChange()
                 }
             }
@@ -191,17 +256,25 @@ class MainActivity : AppCompatActivity() {
 
         /**棋盘检查,检查哪方胜利*/
         private fun tableChecking(circle: Circle) {
-            val surrounds = circle.getSurrounds()
+            val detectWon = circle.detectWon()
 
-            Thread {
-                for (circleD in surrounds) {
-                    circleD.goDirection {
-                        it.notifyChange()
-                        Thread.sleep(100)
-                        true
+            //有赢的数据，则直线赢程序
+            detectWon?.let {
+                Thread {
+                    for (line in it) {
+                        for (circle in line) {
+                            circle.text = circle.type.name1
+                            circle.textColor =
+                                if (circle.type == Circle.TYPE.White) Color.WHITE else Color.BLACK
+                            circle.type = Circle.TYPE.Test
+//                            circle.text = "赢"
+                            circle.notifyChange()
+                            Thread.sleep(100)
+                        }
                     }
-                }
-            }.start()
+                }.start()
+            }
+
         }
     }
 
@@ -213,12 +286,13 @@ class MainActivity : AppCompatActivity() {
 
 //*************************************** Self Define **********************************************
 open class Circle(
+    var textColor: Int = Color.WHITE,
     var type: TYPE = TYPE.None,
     var show: Boolean = false,
-    var showText: Boolean = false,
     var text: String = ""
 ) {
-    override fun toString(): String = "type=$type  show=$show  showText=$showText  text=$text"
+
+    override fun toString(): String = "type=$type  show=$show  text=\"$text\""
 
     enum class TYPE {
         None, White, Black, Test;
@@ -259,5 +333,20 @@ enum class Direction {
     LeftTop,
     LeftBottom,
     RightTop,
-    RightBottom
+    RightBottom;
+
+    operator fun not(): Direction {
+        return when (this) {
+            Left -> Right
+            Top -> Bottom
+            LeftTop -> RightBottom
+            LeftBottom -> RightTop
+
+            Right -> Left
+            Bottom -> Top
+            RightBottom -> LeftTop
+            RightTop -> LeftBottom
+            else -> None
+        }
+    }
 }
