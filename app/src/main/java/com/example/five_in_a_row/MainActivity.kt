@@ -68,10 +68,19 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+        private val handler = Handler {
+            if (it.arg1 >= 0) notifyItemChanged(it.arg1)
+            true
+        }
+
         /**通知数据改变了*/
         private fun Circle.notifyChange() {
+            type = Circle.TYPE.Test // TODO: 2020.2.5 test
+
             val position = table.indexOf(this)
-            if (position >= 0) notifyItemChanged(position)
+            val msg = Message()
+            msg.arg1 = position
+            handler.sendMessage(msg)
         }
 
         /**通知数据改变了*/
@@ -140,11 +149,14 @@ class MainActivity : AppCompatActivity() {
 
         /**往该方向前进*/
         private fun CircleD.goDirection(action: (circleD: CircleD) -> Boolean) {
-            circle.traverseSurrounds {
-                if (it.direction == direction) {
-                    if (action(it)) it.goDirection(action)
-                    false
-                } else true
+            if (action(this)) {
+
+                circle.traverseSurrounds {
+                    if (it.direction == direction) {
+                        it.goDirection(action)
+                        false
+                    } else true
+                }
             }
         }
 
@@ -177,39 +189,20 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        private val handler = Handler {
-            val circle = it.obj as Circle
-            circle.type = Circle.TYPE.Test
-            circle.notifyChange()
-            true
-        }
-
         /**棋盘检查,检查哪方胜利*/
         private fun tableChecking(circle: Circle) {
             val surrounds = circle.getSurrounds()
 
             Thread {
                 for (circleD in surrounds) {
-                    val msg = Message()
-                    msg.obj = circleD.circle
-                    handler.sendMessage(msg)
-                    Thread.sleep(100)
-
                     circleD.goDirection {
-                        val msg = Message()
-                        msg.obj = it.circle
-
-                        handler.sendMessage(msg)
+                        it.notifyChange()
                         Thread.sleep(100)
                         true
                     }
                 }
             }.start()
-
-
         }
-
-
     }
 
     //******************************************************************************************
