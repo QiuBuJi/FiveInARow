@@ -29,6 +29,10 @@ class MainActivity : AppCompatActivity() {
         val adapter = Adapter(this, main_rvTable)
         main_rvTable.adapter = adapter
         main_rvTable.layoutManager = GridLayoutManager(this, adapter.width)
+
+        main_btClear.setOnClickListener {
+            main_rvTable.swapAdapter(Adapter(this, main_rvTable), true)
+        }
     }
 
     //*************************************** Adapter **********************************************
@@ -101,19 +105,25 @@ class MainActivity : AppCompatActivity() {
 
         /**转换为方位数据*/
         private fun getDirection(x: Int, y: Int): Direction {
-            return if (x == 0 && y == 0) Direction.None
-            else if (x < 0) {
-                when {
-                    y == 0 -> Direction.Left
-                    y < 0 -> Direction.LeftTop
-                    else -> Direction.LeftBottom
-                }
-            } else {
-                when {
-                    y == 0 -> Direction.Right
-                    y < 0 -> Direction.RightTop
-                    else -> Direction.RightBottom
-                }
+            return when (x) {
+                -1 ->
+                    when (y) {
+                        -1 -> Direction.LeftTop
+                        0 -> Direction.Left
+                        else -> Direction.LeftBottom
+                    }
+                0 ->
+                    when (y) {
+                        -1 -> Direction.Top
+                        0 -> Direction.None
+                        else -> Direction.Bottom
+                    }
+                else ->
+                    when (y) {
+                        -1 -> Direction.RightTop
+                        0 -> Direction.Right
+                        else -> Direction.RightBottom
+                    }
             }
         }
 

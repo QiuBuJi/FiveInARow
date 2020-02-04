@@ -10,8 +10,8 @@
         android:id="@+id/main_tvTitle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="8dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginLeft="16dp"
+        android:layout_marginTop="16dp"
         android:text="五子棋"
         android:textColor="@android:color/black"
         android:textStyle="bold"
@@ -24,16 +24,25 @@
         android:id="@+id/main_rvTable"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="16dp"
         android:layout_marginBottom="32dp"
         android:background="@drawable/ic_bg_rectangle1"
         android:foreground="@drawable/ic_bg_rectangle1"
-        android:padding="1px"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.0"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/main_tvTitle"
         app:layout_constraintVertical_bias="0.0" />
+
+    <Button
+        android:id="@+id/main_btClear"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="16dp"
+        android:text="清空"
+        app:layout_constraintBottom_toTopOf="@+id/main_rvTable"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
