@@ -12,8 +12,10 @@ import android.os.Message
 import android.util.TypedValue
 import android.view.*
 import android.widget.TextView
+import androidx.appcompat.app.ActionBar
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import kotlinx.android.synthetic.main.activity_main.*
 
 class MainActivity : AppCompatActivity() {
@@ -41,17 +43,15 @@ class MainActivity : AppCompatActivity() {
         heightMain = main_clMain.height
         windowManager.defaultDisplay.getSize(sizeScreen)//取屏幕尺寸
 
-        swapAdapter()//设置棋盘适配器
-
         //init others
 
-
-        //清空棋盘
-        main_btClear.setOnClickListener { swapAdapter() }
+        main_btClear.setOnClickListener { swapAdapter(point) }//监听器，清空棋盘
+        main_btClear.performClick()//初始化棋盘
     }
 
     /**交换adapter*/
-    private fun swapAdapter() {
+    private fun swapAdapter(point: Point) {
+        //设置棋盘适配器
         adapter = Adapter(this, main_rvTable, point.x, point.y)
         main_rvTable.swapAdapter(adapter, true)
         main_rvTable.layoutManager = GridLayoutManager(this, adapter.width)
@@ -59,6 +59,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+
     }
 
     private val group1 = 1
@@ -66,19 +67,21 @@ class MainActivity : AppCompatActivity() {
     private val group3 = 3
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menu?.run {
-            var addSubMenu = addSubMenu(group1, 0, 0, "先下棋")
-            addSubMenu.add(group1, 1, 0, "白棋").setIcon(R.drawable.ic_bg_circle_white)
-            addSubMenu.add(group1, 2, 0, "黑棋").setIcon(R.drawable.ic_bg_circle_black)
+            addSubMenu(group1, 0, 0, "先下棋").run {
+                add(group1, 1, 0, "白棋").setIcon(R.drawable.ic_bg_circle_white)
+                add(group1, 2, 0, "黑棋").setIcon(R.drawable.ic_bg_circle_black)
+            }
 
-            addSubMenu = addSubMenu(group2, 0, 0, "棋盘格数")
-            addSubMenu.add(group2, 1, 0, "6*6").setIcon(R.drawable.ic_bg_circle_white)
-            addSubMenu.add(group2, 2, 0, "6*10").setIcon(R.drawable.ic_bg_circle_black)
-            addSubMenu.add(group2, 3, 0, "10*10").setIcon(R.drawable.ic_bg_circle_white)
-            addSubMenu.add(group2, 4, 0, "10*16").setIcon(R.drawable.ic_bg_circle_black)
-            addSubMenu.add(group2, 5, 0, "16*16").setIcon(R.drawable.ic_bg_circle_white)
-            addSubMenu.add(group2, 6, 0, "16*26").setIcon(R.drawable.ic_bg_circle_black)
+            addSubMenu(group2, 0, 0, "棋盘格数").run {
+                add(group2, 1, 0, "6*6").setIcon(R.drawable.ic_bg_table)
+                add(group2, 2, 0, "6*10").setIcon(R.drawable.ic_bg_table)
+                add(group2, 3, 0, "10*10").setIcon(R.drawable.ic_bg_table)
+                add(group2, 4, 0, "10*16").setIcon(R.drawable.ic_bg_table)
+                add(group2, 5, 0, "16*16").setIcon(R.drawable.ic_bg_table)
+                add(group2, 6, 0, "16*26").setIcon(R.drawable.ic_bg_table)
+            }
 
-            add(group3, 0, 0, "关于")
+            add(group3, 4, 0, "关于")
         }
         return super.onCreateOptionsMenu(menu)
     }
@@ -87,28 +90,28 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem?): Boolean {
         item?.run {
             when (groupId) {
+                //设置哪种类型的棋先下
                 group1 -> {
                     when (itemId) {
-                        1    -> adapter.currentType = Circle.TYPE.White
-                        2    -> adapter.currentType = Circle.TYPE.Black
-                        else -> {
-                        }
+                        1 -> adapter.currentType = Circle.TYPE.White
+                        2 -> adapter.currentType = Circle.TYPE.Black
                     }
                 }
+                //设置棋盘格数
                 group2 -> {
                     val split = title.split("*")
                     point = when (itemId) {
                         0    -> return@run
                         else -> Point(split[0].toInt(), split[1].toInt())
                     }
-                    swapAdapter()
+                    swapAdapter(point)
                 }
-                else   -> {
+                //跳转关于窗口
+                group3 -> {
                     val intent = Intent(this@MainActivity, AboutActivity::class.java)
                     startActivity(intent)
                 }
             }
-
         }
         return super.onOptionsItemSelected(item)
     }
@@ -133,19 +136,19 @@ class MainActivity : AppCompatActivity() {
             val from = LayoutInflater.from(context)
                 .inflate(R.layout.sample_item_circle, parent, false)
             onceSetHeight()
-            val holder = Holder(from)
-            //文字尺寸适配框大小
-            holder.tvCircle.setTextSize(TypedValue.COMPLEX_UNIT_PX, (rvTable.width / width) * 0.4f)
-            return holder
+
+            currentType = typeDefault//设置默认类型
+            return Holder(from)
         }
 
         private var once: Boolean = false
         /**设置棋盘高度*/
         private fun onceSetHeight() {
+            //只让它执行1次
             if (once) return
             once = true
-            val size = (rvTable.width / width) * height
-//            val remain = heightMain - rvTable.y
+            val tableHeight = rvTable.width / width * height
+            val remain = heightMain - rvTable.y
             // FIXME: 2020.2.5 dynamic set the table height
 //            if (size < remain) rvTable.layoutParams.height = size
         }
@@ -324,7 +327,7 @@ class MainActivity : AppCompatActivity() {
 
         //endregion
         //******************************************************************************************
-        /**当前该下棋的类型*/
+        /**当前该下棋的类型*/  //这个初始化不管用
         var currentType: Circle.TYPE = typeDefault
             @SuppressLint("SetTextI18n")
             set(value) {
@@ -335,31 +338,39 @@ class MainActivity : AppCompatActivity() {
 
         override fun onBindViewHolder(holder: Holder, position: Int) {
             holder.run {
+                /**棋子框的边长*/
+                val sizePieces = rvTable.width / width
                 val circle = table[position]
 
-                //显示数据到界面
-                val size = rvTable.width / width
-                itemView.layoutParams.width = size
-                itemView.layoutParams.height = size
+                itemView.layoutParams.height = sizePieces//配置初始化数据
 
-                itemView.setBackgroundColor(Color.TRANSPARENT)//不显示网格
-                tvCircle.setTextColor(circle.textColor)
-                tvCircle.setBackgroundResource(circle.type.resource)
-                tvCircle.text = circle.text
-                tvCircle.setOnClickListener {
-                    //设置不能在同一个地方重复下棋
-                    if (circle.show) return@setOnClickListener
+                //文字尺寸适配框大小
+                tvCircle.run {
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePieces * 0.4f)
+                    layoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
+                    layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
+                }
 
-                    //保存上一次，下的是什么棋
-                    circle.show = true
-                    circle.type = currentType
-                    currentType = currentType.alter
-                    typeDefault = currentType
+                tvCircle.run {
+                    text = circle.text
+                    setTextColor(Color.BLACK)
+//                    setTextColor(circle.textColor)
+                    setBackgroundResource(circle.type.resource)
+                    setOnClickListener {
+                        //设置不能在同一个地方重复下棋
+                        if (circle.show) return@setOnClickListener
 
-                    //检查棋盘
-                    tableChecking(circle)
-                    //通知该位置刷新显示的数据
-                    circle.notifyChange()
+                        //保存上一次，下的是什么棋
+                        circle.show = true
+                        circle.type = currentType
+                        currentType = currentType.alter
+                        typeDefault = currentType
+
+                        //检查棋盘
+                        tableChecking(circle)
+                        //通知该位置刷新显示的数据
+                        circle.notifyChange()
+                    }
                 }
             }
         }
@@ -373,11 +384,13 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     for (line in it) {
                         for (circle in line) {
-                            circle.text = circle.type.name1
-                            circle.textColor = circle.type.color
-                            circle.type = Circle.TYPE.Test
-//                            circle.text = "赢"
-                            circle.notifyChange()
+                            circle.run {
+                                text = circle.type.name1
+                                textColor = circle.type.color
+                                type = Circle.TYPE.Test
+//                                text = "赢"
+                                notifyChange()
+                            }
                             Thread.sleep(100)
                         }
                     }
@@ -387,8 +400,8 @@ class MainActivity : AppCompatActivity() {
         }
     }//**************************************** Adapter End ****************************************
 
-    class Holder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val tvCircle: TextView = itemView.findViewById(R.id.circle_tvTxt)
+    class Holder(rvParent: View) : RecyclerView.ViewHolder(rvParent) {
+        val tvCircle: TextView = rvParent.findViewById(R.id.circle_tvTxt)
     }
     //endregion
 }
