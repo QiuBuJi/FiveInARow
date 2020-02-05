@@ -8,4 +8,7 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <dimen name="sizeMainCircle">32dp</dimen>
+
+
 </resources>

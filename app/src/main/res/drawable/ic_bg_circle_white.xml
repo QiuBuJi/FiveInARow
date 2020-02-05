@@ -5,14 +5,8 @@
     <size
         android:width="50dp"
         android:height="50dp" />
-    <padding
-        android:bottom="2dp"
-        android:left="2dp"
-        android:right="2dp"
-        android:top="2dp" />
-    <!--    <stroke-->
-    <!--        android:width="1px"-->
-    <!--        android:color="@android:color/black"-->
-    <!--        android:dashWidth="2dp"-->
-    <!--        android:dashGap="@android:dimen/dialog_min_width_minor" />-->
+
+<!--    <stroke-->
+<!--        android:width="1px"-->
+<!--        android:color="#79BEBEBE" />-->
 </shape>

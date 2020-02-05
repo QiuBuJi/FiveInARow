@@ -2,4 +2,11 @@
     <string name="app_name">五子棋</string>
     <string name="tvTitle_name">五子棋</string>
     <string name="btClear_name">清空</string>
+    <string name="about_tvText">
+        《五子棋》游戏由吴攀编写\n\n
+        编写时间：2020年2月4日\n
+        个人想法：\n
+        &#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;
+        偶尔一天有再次编写《五子棋》游戏的想法，于是用了休假的几天编写了这个游戏。实现人机器对战，甚至是机器对机器。
+    </string>
 </resources>
