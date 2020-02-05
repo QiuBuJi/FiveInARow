@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">五子棋</string>
+    <string name="tvTitle_name">五子棋</string>
+    <string name="btClear_name">清空</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.example.five_in_a_row
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Point
@@ -17,12 +18,15 @@ import kotlinx.android.synthetic.main.activity_main.*
 
 class MainActivity : AppCompatActivity() {
 
+    //region Companion
     companion object {
         lateinit var tvTitle: TextView
         lateinit var mTvCircle: TextView
         val sizeScreen = Point()
     }
+    //endregion
 
+    //region onCreate
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -30,7 +34,7 @@ class MainActivity : AppCompatActivity() {
         tvTitle = main_tvTitle
         mTvCircle = main_tvCircle
 
-        windowManager.defaultDisplay.getSize(sizeScreen)
+        windowManager.defaultDisplay.getSize(sizeScreen)//取屏幕尺寸
 
         val adapter = Adapter(this, main_rvTable)
         main_rvTable.adapter = adapter
@@ -41,7 +45,9 @@ class MainActivity : AppCompatActivity() {
             main_rvTable.swapAdapter(Adapter(this, main_rvTable), true)
         }
     }
+    //endregion
 
+    //region Adapter
     //*************************************** Adapter **********************************************
     class Adapter(
         private val context: Context,
@@ -63,7 +69,7 @@ class MainActivity : AppCompatActivity() {
             return Holder(from)
         }
 
-        var once: Boolean = false
+        private var once: Boolean = false
         /**设置棋盘高度*/
         private fun onceSetHeight() {
             if (once) return
@@ -76,6 +82,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun getItemCount(): Int = table.size
 
+        //region Game Method
         //*********************************** Game Method ******************************************
         /**获取该类型的资源*/
         private val Circle.TYPE.resource: Int
@@ -236,9 +243,11 @@ class MainActivity : AppCompatActivity() {
             return if (linesOut.isNotEmpty()) linesOut else null
         }
 
+        //endregion
         //******************************************************************************************
         private var oldType: Circle.TYPE = Circle.TYPE.White
 
+        @SuppressLint("SetTextI18n")
         override fun onBindViewHolder(holder: Holder, position: Int) {
             holder.run {
                 val circle = table[position]
@@ -272,8 +281,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**棋盘检查,检查哪方胜利*/
-        private fun tableChecking(circle: Circle) {
-            val detectWon = circle.detectWon()
+        private fun tableChecking(pCircle: Circle) {
+            val detectWon = pCircle.detectWon()
 
             //有赢的数据，则执行赢程序
             detectWon?.let {
@@ -298,8 +307,11 @@ class MainActivity : AppCompatActivity() {
     class Holder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val tvCircle: TextView = itemView.findViewById(R.id.circle_tvTxt)
     }
+    //endregion
 }
 
+
+//region Self Define
 //*************************************** Self Define **********************************************
 open class Circle(
     var textColor: Int = Color.WHITE,
@@ -366,3 +378,4 @@ enum class Direction {
         }
     }
 }
+//endregion
