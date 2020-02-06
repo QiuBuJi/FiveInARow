@@ -12,11 +12,11 @@ import android.os.Message
 import android.util.TypedValue
 import android.view.*
 import android.widget.TextView
-import androidx.appcompat.app.ActionBar
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import kotlinx.android.synthetic.main.activity_main.*
+
+const val TAG = "msg_mine"
 
 class MainActivity : AppCompatActivity() {
     private lateinit var adapter: Adapter
@@ -129,7 +129,7 @@ class MainActivity : AppCompatActivity() {
 
         init {
             val size = width * height
-            for (index in 1..size) table.add(Circle())
+            for (index in 0 until size) table.add(Circle().apply { this.index = index })
         }
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -180,9 +180,18 @@ class MainActivity : AppCompatActivity() {
             }
 
         /**通知数据改变*/
-        private val handler = Handler {
+        private val handler = Handler { it ->
+            it.obj?.let {
+                (it as () -> Unit).invoke()
+            }
             if (it.arg1 >= 0) notifyItemChanged(it.arg1)
             true
+        }
+
+        private fun Handler.send(action: () -> Unit) {
+            val msg = Message()
+            msg.obj = action
+            handler.sendMessage(msg)
         }
 
         /**通知数据改变了*/
@@ -247,11 +256,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**取包围该位置的所有数据*/
-        private fun Circle.getSurrounds(): ArrayList<CircleD> {
+        private fun Circle.getSurrounds(action: (CircleD) -> Boolean = { true }): ArrayList<CircleD> {
             val surrounds = ArrayList<CircleD>()
 
             traverseSurrounds {
-                surrounds.add(it)
+                if (action(it)) surrounds.add(it)
                 true
             }
             return surrounds
@@ -270,47 +279,73 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        /**取所有通过该点的直线*/
-        private fun Circle.getLines(): ArrayList<ArrayList<Circle>> = getLines { true }
+        private fun CircleD.getDirectionLine(action: (circleD: CircleD) -> Boolean = { it.circle.type != Circle.TYPE.None }): ArrayList<CircleD> {
+            val line = ArrayList<CircleD>()
+            //收集棋子为直线
+            traverseDirection {
+                if (action(it)) {
+                    line.add(it)
+                    true
+                } else false
+            }
+            return line
+        }
 
         /**取所有通过该点的直线*/
-        private fun Circle.getLines(action: (circleD: CircleD) -> Boolean): ArrayList<ArrayList<Circle>> {
+        private fun Circle.getLines(action: (circleD: CircleD) -> Boolean = { true }): ArrayList<ArrayList<Circle>> {
             val lines = ArrayList<ArrayList<CircleD>>()
-            val linesOut = ArrayList<ArrayList<Circle>>()
 
             //收集该点发散出去的所有直线
-            traverseSurrounds { it ->
-                val line = ArrayList<CircleD>()
+            traverseSurrounds {
                 //收集棋子为直线
-                it.traverseDirection {
-                    if (action(it)) {
-                        line.add(it)
-                        true
-                    } else false
-                }
+                val line = it.getDirectionLine(action)
+
                 if (line.isNotEmpty()) lines.add(line)//不要空的
                 true
             }
 
+            return connectLines(lines)
+        }
+
+        private fun Circle.connectLines(
+            lines: ArrayList<ArrayList<CircleD>>,
+            mark: Boolean = false
+        ): ArrayList<ArrayList<Circle>> {
+            val linesOut = ArrayList<ArrayList<Circle>>()
+
+            var dirS = 0
+            fun convertToCircle(line: ArrayList<CircleD>): ArrayList<Circle> {
+                return ArrayList<Circle>().apply {
+                    for (circleD in line) {
+                        if (mark) {
+                            dirS = circleD.circle.direS_int or circleD.direction.direS.value
+                            circleD.circle.direS_int = dirS
+                        }
+                        add(circleD.circle)
+                    }
+                }
+            }
+
             //融合该直线与直线延长线上的直线
             while (lines.isNotEmpty()) {
+                val lineConcat = ArrayList<Circle>()
                 val line = lines.removeAt(0)
                 val not = !line[0].direction//相反的直线类型
-                val circles = ArrayList<Circle>()
 
                 line.reverse()//反向
-                for (circleD in line) circles.add(circleD.circle)
+                lineConcat.addAll(convertToCircle(line))
+                lineConcat.add(this)//添加自己
+                direS_int = dirS or direS_int
 
-                if (lines.isEmpty()) circles.add(this)//添加自己
                 for (lineTemp in lines) {
                     if (lineTemp[0].direction == not) {
-                        circles.add(this)//添加自己
-                        for (circleD in lineTemp) circles.add(circleD.circle)//添加剩下的
+                        lineConcat.addAll(convertToCircle(lineTemp))//添加剩下的
                         lines.remove(lineTemp)
                         break
                     }
                 }
-                linesOut.add(circles)
+                if (line.isEmpty()) this.direS_int = dirS
+                linesOut.add(lineConcat)
             }
             return linesOut
         }
@@ -323,6 +358,54 @@ class MainActivity : AppCompatActivity() {
             //大于等于5颗棋子在一条直线上，判断为赢
             for (line in lines) if (line.size >= 5) linesOut.add(line)
             return if (linesOut.isNotEmpty()) linesOut else null
+        }
+
+        /**获取所有大于1的五子棋直线*/
+        private fun getTableLines(): ArrayList<ArrayList<Circle>> {
+            val lines = ArrayList<ArrayList<Circle>>()
+
+            //遍历整个棋盘
+            for (currCircle in table) {
+                if (currCircle.type == Circle.TYPE.None) continue//避开空格子
+
+                val linesTemp = ArrayList<ArrayList<CircleD>>()
+                //取currCircle周围棋子为currCircle.type类型的数据
+                val surrounds = currCircle.getSurrounds { it.circle.type == currCircle.type }
+
+                for (surround in surrounds) {
+                    //数据被用则不再使用
+                    val state = surround.direction.direS.value and surround.circle.direS_int
+                    if (state > 0) continue
+
+                    //取周围该点的直线数据
+                    val line = surround.getDirectionLine { it.circle.type == currCircle.type }
+                    if (line.isNotEmpty()) linesTemp.add(line)//不要空的
+                }
+                //连接直线
+                val connectLines = currCircle.connectLines(linesTemp, true)
+                lines.addAll(connectLines)
+            }
+            for (circle in table) circle.direS_int = 0
+            return lines
+        }
+
+        private var lines: ArrayList<ArrayList<Circle>> = ArrayList()
+        private fun detect(circle: Circle) {
+            if (lines.isNotEmpty()) {
+                for (line in lines) {
+                    for (circle in line) circle.tvText1?.text = ""
+                }
+            }
+
+            lines = circle.getLines { it.circle.type == circle.type }
+            if (lines.isEmpty()) return
+
+            for (line in lines) {
+                for (circle in line) {
+                    circle.tvText1?.text = circle.direS_int.toString()
+                    circle.tvText1?.setTextColor(circle.type.alter.color)
+                }
+            }
         }
 
         //endregion
@@ -340,21 +423,22 @@ class MainActivity : AppCompatActivity() {
             holder.run {
                 /**棋子框的边长*/
                 val sizePieces = rvTable.width / width
+                val sizeReal = sizePieces * 0.4f
                 val circle = table[position]
 
                 itemView.layoutParams.height = sizePieces//配置初始化数据
+                circle.tvText = tvCircle
+                circle.tvText1 = tvText
+                tvText.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizeReal)
 
-                //文字尺寸适配框大小
                 tvCircle.run {
-                    setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePieces * 0.4f)
+                    //文字尺寸适配框大小
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, sizeReal)
                     layoutParams.width = ViewGroup.LayoutParams.MATCH_PARENT
                     layoutParams.height = ViewGroup.LayoutParams.MATCH_PARENT
-                }
 
-                tvCircle.run {
                     text = circle.text
-                    setTextColor(Color.BLACK)
-//                    setTextColor(circle.textColor)
+                    setTextColor(circle.textColor)
                     setBackgroundResource(circle.type.resource)
                     setOnClickListener {
                         //设置不能在同一个地方重复下棋
@@ -371,6 +455,41 @@ class MainActivity : AppCompatActivity() {
                         //通知该位置刷新显示的数据
                         circle.notifyChange()
                     }
+                }
+
+                //显示下标
+                tvText3.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePieces * 0.16f)
+                tvText3.text = position.toString()
+
+                tvCircle.setOnLongClickListener {
+                    val tableData = getTableLines()
+
+//                    detect(circle)
+                    if (tableData.isNotEmpty()) {
+                        Thread {
+                            for (line in tableData) {
+                                for (circle in line) {
+                                    handler.send {
+                                        circle.tvText1?.text = "●"
+                                        circle.tvText1?.setTextColor(circle.type.alter.color)
+                                    }
+                                }
+
+                                val l: Long = 500
+                                Thread.sleep(l)
+                                for (circle in line) {
+                                    handler.send {
+                                        circle.tvText1?.text = ""
+                                        circle.tvText1?.setTextColor(circle.type.color)
+                                    }
+                                }
+                                Thread.sleep(l)
+                            }
+
+                        }.start()
+                    }
+
+                    true
                 }
             }
         }
@@ -398,10 +517,13 @@ class MainActivity : AppCompatActivity() {
             }
 
         }
-    }//**************************************** Adapter End ****************************************
+    }
+    //**************************************** Adapter End ****************************************
 
     class Holder(rvParent: View) : RecyclerView.ViewHolder(rvParent) {
         val tvCircle: TextView = rvParent.findViewById(R.id.circle_tvTxt)
+        val tvText: TextView = rvParent.findViewById(R.id.circle_tvTxt2)
+        val tvText3: TextView = rvParent.findViewById(R.id.circle_tvTxt3)
     }
     //endregion
 }
@@ -413,10 +535,14 @@ open class Circle(
     var textColor: Int = Color.WHITE,
     var type: TYPE = TYPE.None,
     var show: Boolean = false,
-    var text: String = ""
+    var text: String = "",
+    var direS_int: Int = 0,
+    var tvText: TextView? = null,
+    var tvText1: TextView? = null,
+    var index: Int = -1
 ) {
 
-    override fun toString(): String = "type=$type  show=$show  text=\"$text\""
+    override fun toString(): String = "index=$index  type=$type  show=$show  text=\"$text\""
 
     enum class TYPE {
         None, White, Black, Test;
@@ -450,6 +576,44 @@ class CircleD(val circle: Circle, var direction: Direction) {
     override fun toString(): String = "direction = $direction"
 }
 
+enum class DirectionS(val value: Int) {
+    /**─*/
+    Horizontal(1),
+    /**│*/
+    Vertical(2),
+    /**╲*/
+    CantLeft(4),
+    /**╱*/
+    CantRight(8),
+    /**╳*/
+    None(0);
+
+    override fun toString(): String = "$name1  binary=$strBinary"
+
+    val strBinary: String
+        get() {
+            var num = value
+            val sb = StringBuffer()
+            while (num != 0) {
+                val i = num % 2
+                sb.insert(0, i)
+                num /= 2
+            }
+            return sb.toString()
+        }
+
+    val name1: String
+        get() {
+            return when (this) {
+                Horizontal -> "─"
+                Vertical   -> "│"
+                CantLeft   -> "╲"
+                CantRight  -> "╱"
+                else       -> "╳"
+            }
+        }
+}
+
 enum class Direction {
     None,
     Left,
@@ -477,6 +641,17 @@ enum class Direction {
             else        -> None
         }
     }
+
+    val direS: DirectionS
+        get() {
+            return when (this) {
+                Left, Right          -> DirectionS.Horizontal
+                Top, Bottom          -> DirectionS.Vertical
+                LeftTop, RightBottom -> DirectionS.CantLeft
+                LeftBottom, RightTop -> DirectionS.CantRight
+                else                 -> DirectionS.None
+            }
+        }
 
     override fun toString(): String {
         val strDirection = when (this) {
