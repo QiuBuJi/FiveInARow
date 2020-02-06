@@ -494,25 +494,98 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        /**给直线每个格子设置文字*/
+        private fun insertText(line: ArrayList<Circle>, txt: String): Unit {
+            val iterator = txt.iterator()
+
+            for (circle in line) {
+                circle.run {
+                    val strNext =
+                        if (iterator.hasNext()) iterator.nextChar().toString() else ""
+                    text = strNext
+                }
+            }
+        }
+
         /**棋盘检查,检查哪方胜利*/
         private fun tableChecking(pCircle: Circle) {
             val detectWon = pCircle.detectWon()
 
-            //有赢的数据，则执行赢程序
+            val strWin = "太棒了你！！！！！"
+            val iterator = strWin.iterator()
+
             detectWon?.let {
                 Thread {
+                    //有赢的数据，则执行赢程序
                     for (line in it) {
                         for (circle in line) {
                             circle.run {
-                                text = circle.type.name1
+                                val strNext =
+                                    if (iterator.hasNext()) iterator.nextChar().toString() else ""
+                                text = strNext
                                 textColor = circle.type.color
                                 type = Circle.TYPE.Test
-//                                text = "赢"
                                 notifyChange()
                             }
                             Thread.sleep(100)
                         }
                     }
+
+                    //贪吃蛇游戏代码部分
+                    if (it.size > 1) return@Thread
+                    val line = it[0]
+                    var direction: Direction = Direction.Right
+
+                    while (true) {
+                        var head = line.first()
+                        head.textColor = Color.RED
+
+                        val blanks = head.getSurrounds { it.circle.type == Circle.TYPE.None }
+                        var random = try {
+                            blanks.random()
+                        } catch (e: Exception) {
+                            for (circle in line) {
+                                circle.run {
+                                    textColor = Color.RED
+                                    notifyChange()
+                                }
+                            }
+                            insertText(line, "哦噢我死了")
+                            Thread.sleep(2000)
+
+                            for (circle in line) {
+                                circle.run {
+                                    clear()
+                                    notifyChange()
+                                }
+                            }
+                            break
+                        }
+                        for (blank in blanks) if (blank.direction == direction) random = blank
+
+                        random.circle.copy(head)
+                        random.circle.notifyChange()
+                        direction = random.direction
+
+                        var temp = head
+                        head = random.circle
+                        for (index in 1 until line.size) {
+                            val circle = line[index]
+
+                            temp.copy(circle)
+                            temp.notifyChange()
+                            temp = circle
+                        }
+
+                        val last = line.last()
+                        last.clear()
+                        last.notifyChange()
+                        line.remove(last)
+                        line.add(0, head)
+
+                        Thread.sleep(500)
+                    }
+
                 }.start()
             }
 
@@ -541,6 +614,24 @@ open class Circle(
     var tvText1: TextView? = null,
     var index: Int = -1
 ) {
+
+    /**拷贝数据到本类中*/
+    fun copy(circle: Circle) {
+        textColor = circle.textColor
+        type = circle.type
+        show = circle.show
+        text = circle.text
+        direS_int = circle.direS_int
+    }
+
+    /**清空本类的数据*/
+    fun clear() {
+        textColor = 0
+        type = TYPE.None
+        show = false
+        text = ""
+        direS_int = 0
+    }
 
     override fun toString(): String = "index=$index  type=$type  show=$show  text=\"$text\""
 
