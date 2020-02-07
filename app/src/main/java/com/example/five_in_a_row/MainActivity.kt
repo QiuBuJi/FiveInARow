@@ -259,7 +259,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**取所有通过该点的直线*/
-        private fun Circle.getLines(action: (circleD: CircleD) -> Boolean = { true }): ArrayList<ArrayList<Circle>> {
+        private fun Circle.getLines(action: (circleD: CircleD) -> Boolean = { true }): ArrayList<ArrayList<CircleD>> {
             val lines = ArrayList<ArrayList<CircleD>>()
 
             //收集该点发散出去的所有直线
@@ -278,36 +278,36 @@ class MainActivity : AppCompatActivity() {
         private fun Circle.connectLines(
             lines: ArrayList<ArrayList<CircleD>>,
             mark: Boolean = false
-        ): ArrayList<ArrayList<Circle>> {
-            val linesOut = ArrayList<ArrayList<Circle>>()
+        ): ArrayList<ArrayList<CircleD>> {
+            val linesOut = ArrayList<ArrayList<CircleD>>()
 
             var dirS = 0
-            fun convertToCircle(line: ArrayList<CircleD>): ArrayList<Circle> {
-                return ArrayList<Circle>().apply {
+            fun markIt(line: ArrayList<CircleD>): ArrayList<CircleD> {
+                return ArrayList<CircleD>().apply {
                     for (circleD in line) {
                         if (mark) {
                             dirS = circleD.circle.direS_int or circleD.direction.direS.value
                             circleD.circle.direS_int = dirS
                         }
-                        add(circleD.circle)
+                        add(circleD)
                     }
                 }
             }
 
             //融合该直线与直线延长线上的直线
             while (lines.isNotEmpty()) {
-                val lineConcat = ArrayList<Circle>()
+                val lineConcat = ArrayList<CircleD>()
                 val line = lines.removeAt(0)
                 val not = !line[0].direction//相反的直线类型
 
                 line.reverse()//反向
-                lineConcat.addAll(convertToCircle(line))
-                lineConcat.add(this)//添加自己
+                lineConcat.addAll(markIt(line))
+                lineConcat.add(CircleD(this, line[0].direction))//添加自己
                 direS_int = dirS or direS_int
 
                 for (lineTemp in lines) {
                     if (lineTemp[0].direction == not) {
-                        lineConcat.addAll(convertToCircle(lineTemp))//添加剩下的
+                        lineConcat.addAll(markIt(lineTemp))//添加剩下的
                         lines.remove(lineTemp)
                         break
                     }
@@ -319,8 +319,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**检测赢的一方*/
-        private fun Circle.detectWon(): ArrayList<ArrayList<Circle>>? {
-            val linesOut = ArrayList<ArrayList<Circle>>()
+        private fun Circle.detectWon(): ArrayList<ArrayList<CircleD>>? {
+            val linesOut = ArrayList<ArrayList<CircleD>>()
             val lines = getLines { it.circle.type == this.type }
 
             //大于等于5颗棋子在一条直线上，判断为赢
@@ -329,8 +329,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**获取所有大于1的五子棋直线*/
-        private fun getTableLines(): ArrayList<ArrayList<Circle>> {
-            val lines = ArrayList<ArrayList<Circle>>()
+        private fun getTableLines(): ArrayList<ArrayList<CircleD>> {
+            val lines = ArrayList<ArrayList<CircleD>>()
 
             //遍历整个棋盘
             for (currCircle in table) {
@@ -403,6 +403,8 @@ class MainActivity : AppCompatActivity() {
                         tableChecking(circle)
                         //通知该位置刷新显示的数据
                         circle.notifyChange()
+
+                        runAI(Circle.TYPE.BLACK)
                     }
                 }
 
@@ -419,8 +421,8 @@ class MainActivity : AppCompatActivity() {
                             for (line in tableData) {
                                 for (circle in line) {
                                     handler.send {
-                                        circle.tvText1?.text = "●"
-                                        circle.tvText1?.setTextColor(circle.type.alter.color)
+                                        circle.circle?.text = "●"
+                                        circle.circle.tvText1?.setTextColor(circle.circle.type.alter.color)
                                     }
                                 }
 
@@ -428,8 +430,8 @@ class MainActivity : AppCompatActivity() {
                                 Thread.sleep(l)
                                 for (circle in line) {
                                     handler.send {
-                                        circle.tvText1?.text = ""
-                                        circle.tvText1?.setTextColor(circle.type.color)
+                                        circle.circle.tvText1?.text = ""
+                                        circle.circle.tvText1?.setTextColor(circle.circle.type.color)
                                     }
                                 }
                                 Thread.sleep(l)
@@ -443,15 +445,38 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        private fun runAI(type: Circle.TYPE) {
+            if (currentType != type) return
+
+            Thread {
+                Thread.sleep(500)
+
+                val tableLines = getTableLines()
+                var ownLines = tableLines.filter { it[0].circle.type == type }
+
+                var max: Int = 0
+                for (ownLine in ownLines) if (ownLine.size > max) max = ownLine.size
+
+                ownLines = ownLines.sortedByDescending { it.size }
+
+                for (line in ownLines) {
+
+                }
+
+
+            }.start()
+        }
+
         /**给直线每个格子设置文字*/
-        private fun insertText(line: ArrayList<Circle>, txt: String): Unit {
+        private fun insertText(line: ArrayList<CircleD>, txt: String): Unit {
             val iterator = txt.iterator()
 
             for (circle in line) {
                 circle.run {
                     val strNext =
                         if (iterator.hasNext()) iterator.nextChar().toString() else ""
-                    text = strNext
+
+                    circle.circle.text = strNext
                 }
             }
         }
@@ -469,9 +494,9 @@ class MainActivity : AppCompatActivity() {
                     //有赢的数据，则执行赢程序 *******************************************************
                     for (line in it) {
                         for (circle in line) {
-                            circle.run {
+                            circle.circle.run {
                                 text = if (getC.hasNext()) getC.next().toString() else ""
-                                textColor = circle.type.color
+                                textColor = circle.circle.type.color
                                 type = Circle.TYPE.TEST
                                 notifyChange()
                             }
@@ -489,36 +514,36 @@ class MainActivity : AppCompatActivity() {
         private var food = Circle.TYPE.FOOD
 
         //贪吃蛇游戏代码部分 ************************************************************
-        private fun gameSnake(it: ArrayList<ArrayList<Circle>>) {
+        private fun gameSnake(it: ArrayList<ArrayList<CircleD>>) {
             for (line in it) {
                 Thread {
                     var direction: Direction = Direction.Right
 
                     //贪吃蛇“结束”程序
-                    fun deathProgress(line: java.util.ArrayList<Circle>) {
+                    fun deathProgress(line: java.util.ArrayList<CircleD>) {
                         //显示死时候的样貌
                         for (circle in line) {
-                            circle.textColor = Color.RED
-                            circle.notifyChange()
+                            circle.circle.textColor = Color.RED
+                            circle.circle.notifyChange()
                         }
                         insertText(line, "我死了********")
                         Thread.sleep(2000)
 
                         //复原数据
                         for (circle in line) {
-                            circle.clear()
-                            circle.notifyChange()
+                            circle.circle.clear()
+                            circle.circle.notifyChange()
                         }
                     }
 
                     //***贪吃蛇循环***
                     while (true) {
                         var head = line.first()
-                        if (head.type == Circle.TYPE.NONE) break
-                        head.textColor = Color.RED
+                        if (head.circle.type == Circle.TYPE.NONE) break
+                        head.circle.textColor = Color.RED
 
                         //行走方向获取
-                        var surroundBoxes = head.getSurrounds {
+                        var surroundBoxes = head.circle.getSurrounds {
                             it.circle.type == food || it.circle.type == Circle.TYPE.NONE &&
                                     //不让斜着走
                                     when (it.direction) {
@@ -531,7 +556,7 @@ class MainActivity : AppCompatActivity() {
                                     }
                         }
                         if (surroundBoxes.isEmpty())
-                            surroundBoxes = head.getSurrounds {
+                            surroundBoxes = head.circle.getSurrounds {
                                 it.circle.type == Circle.TYPE.NONE || it.circle.type == food
                             }
 
@@ -570,19 +595,19 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         val hasFood = random.circle.type == food
-                        random.circle.copy(head)
+                        random.circle.copy(head.circle)
                         random.circle.notifyChange()
                         direction = random.direction
 
                         var temp = head
-                        head = random.circle
+                        head = random
 
                         //向head方向移动数据
                         for (index in 1 until line.size) {
                             val circle = line[index]
 
-                            temp.copy(circle)
-                            temp.notifyChange()
+                            temp.circle.copy(circle.circle)
+                            temp.circle.notifyChange()
                             temp = circle
                         }
 
@@ -593,8 +618,8 @@ class MainActivity : AppCompatActivity() {
                             val blankBox = table.filter { it.type == Circle.TYPE.NONE }
                         } else {
                             line.remove(last)//去尾
-                            last.clear()//不要尾部的数据了
-                            last.notifyChange()
+                            last.circle.clear()//不要尾部的数据了
+                            last.circle.notifyChange()
                         }
                         line.add(0, head)//加头
 
