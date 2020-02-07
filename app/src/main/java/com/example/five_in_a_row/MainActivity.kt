@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
         lateinit var mTvCircle: TextView
         val sizeScreen = Point()
         var heightMain: Int = 0
-        var typeDefault: Circle.TYPE = Circle.TYPE.White
+        var typeDefault: Circle.TYPE = Circle.TYPE.WHITE
     }
     //endregion
 
@@ -55,6 +55,7 @@ class MainActivity : AppCompatActivity() {
         adapter = Adapter(this, main_rvTable, point.x, point.y)
         main_rvTable.swapAdapter(adapter, true)
         main_rvTable.layoutManager = GridLayoutManager(this, adapter.width)
+        main_rvTable.setHasFixedSize(true)
     }
 
     override fun onStart() {
@@ -93,8 +94,8 @@ class MainActivity : AppCompatActivity() {
                 //设置哪种类型的棋先下
                 group1 -> {
                     when (itemId) {
-                        1 -> adapter.currentType = Circle.TYPE.White
-                        2 -> adapter.currentType = Circle.TYPE.Black
+                        1 -> adapter.currentType = Circle.TYPE.WHITE
+                        2 -> adapter.currentType = Circle.TYPE.BLACK
                     }
                 }
                 //设置棋盘格数
@@ -245,7 +246,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        private fun CircleD.getDirectionLine(action: (circleD: CircleD) -> Boolean = { it.circle.type != Circle.TYPE.None }): ArrayList<CircleD> {
+        private fun CircleD.getDirectionLine(action: (circleD: CircleD) -> Boolean = { it.circle.type != Circle.TYPE.NONE }): ArrayList<CircleD> {
             val line = ArrayList<CircleD>()
             //收集棋子为直线
             traverseDirection {
@@ -333,7 +334,7 @@ class MainActivity : AppCompatActivity() {
 
             //遍历整个棋盘
             for (currCircle in table) {
-                if (currCircle.type == Circle.TYPE.None) continue//避开空格子
+                if (currCircle.type == Circle.TYPE.NONE) continue//避开空格子
 
                 val linesTemp = ArrayList<ArrayList<CircleD>>()
                 //取currCircle周围棋子为currCircle.type类型的数据
@@ -354,25 +355,6 @@ class MainActivity : AppCompatActivity() {
             }
             for (circle in table) circle.direS_int = 0
             return lines
-        }
-
-        private var lines: ArrayList<ArrayList<Circle>> = ArrayList()
-        private fun detect(circle: Circle) {
-            if (lines.isNotEmpty()) {
-                for (line in lines) {
-                    for (circle in line) circle.tvText1?.text = ""
-                }
-            }
-
-            lines = circle.getLines { it.circle.type == circle.type }
-            if (lines.isEmpty()) return
-
-            for (line in lines) {
-                for (circle in line) {
-                    circle.tvText1?.text = circle.direS_int.toString()
-                    circle.tvText1?.setTextColor(circle.type.alter.color)
-                }
-            }
         }
 
         //endregion
@@ -478,113 +460,157 @@ class MainActivity : AppCompatActivity() {
         private fun tableChecking(pCircle: Circle) {
             val detectWon = pCircle.detectWon()
 
-            val strWin = "太棒了你！！！！！"
-            val iterator = strWin.iterator()
-
             detectWon?.let {
                 Thread {
+                    val strWin = "太棒了你！！！！！"
+                    val getC = strWin.iterator()
+                    food = pCircle.type.alter
+
                     //有赢的数据，则执行赢程序 *******************************************************
                     for (line in it) {
                         for (circle in line) {
                             circle.run {
-                                val strNext =
-                                    if (iterator.hasNext()) iterator.nextChar().toString() else ""
-                                text = strNext
+                                text = if (getC.hasNext()) getC.next().toString() else ""
                                 textColor = circle.type.color
-                                type = Circle.TYPE.Test
+                                type = Circle.TYPE.TEST
                                 notifyChange()
                             }
-                            Thread.sleep(100)
+                            Thread.sleep(200)
                         }
                     }
-                    game(it)
-                }.start()
-            }
 
+                    //加入贪吃蛇
+                    gameSnake(it)
+                }.start()
+
+            }
         }
 
+        private var food = Circle.TYPE.FOOD
+
         //贪吃蛇游戏代码部分 ************************************************************
-        private fun game(it: ArrayList<ArrayList<Circle>>) {
-            if (it.size > 1) return
-            val line = it[0]
-            var direction: Direction = Direction.Right
+        private fun gameSnake(it: ArrayList<ArrayList<Circle>>) {
+            for (line in it) {
+                Thread {
+                    var direction: Direction = Direction.Right
 
-            //贪吃蛇的“死”程序
-            fun deathProgress(line: java.util.ArrayList<Circle>) {
-                //显示死时候的样貌
-                for (circle in line) {
-                    circle.textColor = Color.RED
-                    circle.notifyChange()
-                }
-                insertText(line, "我死了********")
-                Thread.sleep(2000)
+                    //贪吃蛇“结束”程序
+                    fun deathProgress(line: java.util.ArrayList<Circle>) {
+                        //显示死时候的样貌
+                        for (circle in line) {
+                            circle.textColor = Color.RED
+                            circle.notifyChange()
+                        }
+                        insertText(line, "我死了********")
+                        Thread.sleep(2000)
 
-                //复原数据
-                for (circle in line) {
-                    circle.clear()
-                    circle.notifyChange()
-                }
-            }
+                        //复原数据
+                        for (circle in line) {
+                            circle.clear()
+                            circle.notifyChange()
+                        }
+                    }
 
-            while (true) {
-                var head = line.first()
-                head.textColor = Color.RED
+                    //***贪吃蛇循环***
+                    while (true) {
+                        var head = line.first()
+                        if (head.type == Circle.TYPE.NONE) break
+                        head.textColor = Color.RED
 
-                //行走方向获取
-                var blanks = head.getSurrounds {
-                    it.circle.type == Circle.TYPE.None &&
-                            //不让斜着走
-                            when (it.direction) {
-                                Direction.RightTop,
-                                Direction.RightBottom,
-                                Direction.LeftTop,
-                                Direction.LeftBottom
-                                     -> false
-                                else -> true
+                        //行走方向获取
+                        var surroundBoxes = head.getSurrounds {
+                            it.circle.type == food || it.circle.type == Circle.TYPE.NONE &&
+                                    //不让斜着走
+                                    when (it.direction) {
+                                        Direction.RightTop,
+                                        Direction.RightBottom,
+                                        Direction.LeftTop,
+                                        Direction.LeftBottom
+                                             -> false
+                                        else -> true
+                                    }
+                        }
+                        if (surroundBoxes.isEmpty())
+                            surroundBoxes = head.getSurrounds {
+                                it.circle.type == Circle.TYPE.NONE || it.circle.type == food
                             }
-                }
-                if (blanks.size == 0) blanks =
-                    head.getSurrounds { it.circle.type == Circle.TYPE.None }
 
-                var random = try {
-                    blanks.random()//随机获取方向
-                } catch (e: Exception) {
-                    //没有方向可以行走，死亡程序开始
-                    deathProgress(line)
-                    break
-                }
-                //没有方向可以行走，死亡程序开始
-                if (blanks.isEmpty()) {
-                    deathProgress(line)
-                    break
-                }
-                //走直线
+                        var random = try {
+                            surroundBoxes.random()//随机获取方向
+                        } catch (e: Exception) {
+                            //没有方向可以行走，死亡程序开始
+                            deathProgress(line)
+                            break
+                        }
+                        //没有方向可以行走，死亡程序开始
+                        if (surroundBoxes.isEmpty()) {
+                            deathProgress(line)
+                            break
+                        }
 
-                for (blank in blanks) if (blank.direction == direction) random = blank
 
-                random.circle.copy(head)
-                random.circle.notifyChange()
-                direction = random.direction
+                        var hasDir = false
+                        for (box in surroundBoxes) {
+                            box.traverseDirection {
+                                if (it.circle.type == food) {
+                                    random = box
+                                    hasDir = true
+                                    false
+                                } else it.circle.type == Circle.TYPE.NONE
+                            }
+                            if (hasDir) break
+                        }
 
-                var temp = head
-                head = random.circle
 
-                //向head方向移动数据
-                for (index in 1 until line.size) {
-                    val circle = line[index]
+                        if (hasDir) {
 
-                    temp.copy(circle)
-                    temp.notifyChange()
-                    temp = circle
-                }
+                        } else {
+                            //走直线
+                            for (box in surroundBoxes) if (box.direction == direction) random = box
+                        }
 
-                val last = line.removeAt(line.size - 1)//去尾
-                last.clear()//不要尾部的数据了
-                last.notifyChange()
-                line.add(0, head)//加头
+                        val hasFood = random.circle.type == food
+                        random.circle.copy(head)
+                        random.circle.notifyChange()
+                        direction = random.direction
 
-                Thread.sleep(500)
+                        var temp = head
+                        head = random.circle
+
+                        //向head方向移动数据
+                        for (index in 1 until line.size) {
+                            val circle = line[index]
+
+                            temp.copy(circle)
+                            temp.notifyChange()
+                            temp = circle
+                        }
+
+                        val last = line.last()
+                        //如果有食物
+                        if (hasFood) {
+                            //过滤掉除了条件以外的元素
+                            val blankBox = table.filter { it.type == Circle.TYPE.NONE }
+                        } else {
+                            line.remove(last)//去尾
+                            last.clear()//不要尾部的数据了
+                            last.notifyChange()
+                        }
+                        line.add(0, head)//加头
+
+                        Thread.sleep(100)
+                    }//***贪吃蛇循环 - 尾部***
+                }.start()
+
             }
+        }
+
+        private lateinit var rvParent: RecyclerView
+        override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+            super.onAttachedToRecyclerView(recyclerView)
+            rvParent = recyclerView
+            rvParent.itemAnimator?.changeDuration = 0
+
         }
     }
     //**************************************** Adapter End ****************************************
@@ -601,7 +627,7 @@ class MainActivity : AppCompatActivity() {
 //*************************************** Self Define **********************************************
 open class Circle(
     var textColor: Int = Color.WHITE,
-    var type: TYPE = TYPE.None,
+    var type: TYPE = TYPE.NONE,
     var show: Boolean = false,
     var text: String = "",
     var direS_int: Int = 0,
@@ -622,7 +648,7 @@ open class Circle(
     /**清空本类的数据*/
     fun clear() {
         textColor = 0
-        type = TYPE.None
+        type = TYPE.NONE
         show = false
         text = ""
         direS_int = 0
@@ -631,15 +657,16 @@ open class Circle(
     override fun toString(): String = "index=$index  type=$type  show=$show  text=\"$text\""
 
     enum class TYPE {
-        None, White, Black, Test;
+        NONE, WHITE, BLACK, TEST, FOOD;
 
         /**获取该类型的资源*/
         val resource: Int
             get() {
                 return when (this) {
-                    Black -> R.drawable.ic_bg_circle_black
-                    White -> R.drawable.ic_bg_circle_white
-                    Test  -> R.drawable.ic_bg_circle_blue
+                    BLACK -> R.drawable.ic_bg_circle_black
+                    WHITE -> R.drawable.ic_bg_circle_white
+                    TEST  -> R.drawable.ic_bg_circle_blue
+                    FOOD  -> R.drawable.ic_bg_food
                     else  -> R.drawable.ic_bg_rectangle
                 }
             }
@@ -648,9 +675,9 @@ open class Circle(
         val color: Int
             get() {
                 return when (this) {
-                    White -> Color.WHITE
-                    Black -> Color.BLACK
-                    Test  -> Color.BLUE
+                    WHITE -> Color.WHITE
+                    BLACK -> Color.BLACK
+                    TEST  -> Color.BLUE
                     else  -> Color.YELLOW
                 }
             }
@@ -660,9 +687,9 @@ open class Circle(
         val name1: String
             get() {
                 return when (this) {
-                    White -> "白棋"
-                    Black -> "黑棋"
-                    Test  -> "测试"
+                    WHITE -> "白棋"
+                    BLACK -> "黑棋"
+                    TEST  -> "测试"
                     else  -> "空"
                 }
             }
@@ -671,9 +698,9 @@ open class Circle(
         val alter: TYPE
             get() {
                 return when (this) {
-                    White -> Black
-                    Black -> White
-                    else  -> Test
+                    WHITE -> BLACK
+                    BLACK -> WHITE
+                    else  -> TEST
                 }
             }
     }
