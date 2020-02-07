@@ -117,7 +117,6 @@ class MainActivity : AppCompatActivity() {
     }
     //endregion
 
-    //region Adapter
     //*************************************** Adapter **********************************************
     class Adapter(
         private val context: Context,
@@ -157,37 +156,13 @@ class MainActivity : AppCompatActivity() {
 
         //region Game Method
         //*********************************** Game Method ******************************************
-        /**获取该类型的资源*/
-        private val Circle.TYPE.resource: Int
-            get() {
-                return when (this) {
-                    Circle.TYPE.Black -> R.drawable.ic_bg_circle_black
-                    Circle.TYPE.White -> R.drawable.ic_bg_circle_white
-                    Circle.TYPE.Test  -> R.drawable.ic_bg_circle_blue
-                    else              -> R.drawable.ic_bg_rectangle
-                }
-            }
-
-        /**获取该类型的颜色*/
-        private val Circle.TYPE.color: Int
-            get() {
-                return when (this) {
-                    Circle.TYPE.White -> Color.WHITE
-                    Circle.TYPE.Black -> Color.BLACK
-                    Circle.TYPE.Test  -> Color.BLUE
-                    else              -> Color.YELLOW
-                }
-            }
-
         /**通知数据改变*/
         private val handler = Handler { it ->
-            it.obj?.let {
-                (it as () -> Unit).invoke()
-            }
-            if (it.arg1 >= 0) notifyItemChanged(it.arg1)
+            it.obj?.let { (it as () -> Unit).invoke() }
             true
         }
 
+        //简化handler发送过程
         private fun Handler.send(action: () -> Unit) {
             val msg = Message()
             msg.obj = action
@@ -196,22 +171,13 @@ class MainActivity : AppCompatActivity() {
 
         /**通知数据改变了*/
         private fun Circle.notifyChange() {
-            val position = table.indexOf(this)
-            val msg = Message()
-            msg.arg1 = position
-            handler.sendMessage(msg)
+            handler.send { notifyItemChanged(this.index) }
         }
-
-        /**通知数据改变了*/
-        private fun CircleD.notifyChange() = circle.notifyChange()
 
         /**遍历包围该位置的所有数据*/
         private fun Circle.traverseSurrounds(action: (circleD: CircleD) -> Boolean) {
-            val position = table.indexOf(this)
-            if (position < 0) return
-
             for (times in -1..1) {
-                val y = position + (times * width)
+                val y = index + (times * width)
                 val cx = y / width
                 if (y < 0) continue//上越界
 
@@ -307,6 +273,7 @@ class MainActivity : AppCompatActivity() {
             return connectLines(lines)
         }
 
+        /**连接两个线段*/
         private fun Circle.connectLines(
             lines: ArrayList<ArrayList<CircleD>>,
             mark: Boolean = false
@@ -516,7 +483,7 @@ class MainActivity : AppCompatActivity() {
 
             detectWon?.let {
                 Thread {
-                    //有赢的数据，则执行赢程序
+                    //有赢的数据，则执行赢程序 *******************************************************
                     for (line in it) {
                         for (circle in line) {
                             circle.run {
@@ -530,65 +497,94 @@ class MainActivity : AppCompatActivity() {
                             Thread.sleep(100)
                         }
                     }
-
-                    //贪吃蛇游戏代码部分
-                    if (it.size > 1) return@Thread
-                    val line = it[0]
-                    var direction: Direction = Direction.Right
-
-                    while (true) {
-                        var head = line.first()
-                        head.textColor = Color.RED
-
-                        val blanks = head.getSurrounds { it.circle.type == Circle.TYPE.None }
-                        var random = try {
-                            blanks.random()
-                        } catch (e: Exception) {
-                            for (circle in line) {
-                                circle.run {
-                                    textColor = Color.RED
-                                    notifyChange()
-                                }
-                            }
-                            insertText(line, "哦噢我死了")
-                            Thread.sleep(2000)
-
-                            for (circle in line) {
-                                circle.run {
-                                    clear()
-                                    notifyChange()
-                                }
-                            }
-                            break
-                        }
-                        for (blank in blanks) if (blank.direction == direction) random = blank
-
-                        random.circle.copy(head)
-                        random.circle.notifyChange()
-                        direction = random.direction
-
-                        var temp = head
-                        head = random.circle
-                        for (index in 1 until line.size) {
-                            val circle = line[index]
-
-                            temp.copy(circle)
-                            temp.notifyChange()
-                            temp = circle
-                        }
-
-                        val last = line.last()
-                        last.clear()
-                        last.notifyChange()
-                        line.remove(last)
-                        line.add(0, head)
-
-                        Thread.sleep(500)
-                    }
-
+                    game(it)
                 }.start()
             }
 
+        }
+
+        //贪吃蛇游戏代码部分 ************************************************************
+        private fun game(it: ArrayList<ArrayList<Circle>>) {
+            if (it.size > 1) return
+            val line = it[0]
+            var direction: Direction = Direction.Right
+
+            //贪吃蛇的“死”程序
+            fun deathProgress(line: java.util.ArrayList<Circle>) {
+                //显示死时候的样貌
+                for (circle in line) {
+                    circle.textColor = Color.RED
+                    circle.notifyChange()
+                }
+                insertText(line, "我死了********")
+                Thread.sleep(2000)
+
+                //复原数据
+                for (circle in line) {
+                    circle.clear()
+                    circle.notifyChange()
+                }
+            }
+
+            while (true) {
+                var head = line.first()
+                head.textColor = Color.RED
+
+                //行走方向获取
+                var blanks = head.getSurrounds {
+                    it.circle.type == Circle.TYPE.None &&
+                            //不让斜着走
+                            when (it.direction) {
+                                Direction.RightTop,
+                                Direction.RightBottom,
+                                Direction.LeftTop,
+                                Direction.LeftBottom
+                                     -> false
+                                else -> true
+                            }
+                }
+                if (blanks.size == 0) blanks =
+                    head.getSurrounds { it.circle.type == Circle.TYPE.None }
+
+                var random = try {
+                    blanks.random()//随机获取方向
+                } catch (e: Exception) {
+                    //没有方向可以行走，死亡程序开始
+                    deathProgress(line)
+                    break
+                }
+                //没有方向可以行走，死亡程序开始
+                if (blanks.isEmpty()) {
+                    deathProgress(line)
+                    break
+                }
+                //走直线
+
+                for (blank in blanks) if (blank.direction == direction) random = blank
+
+                random.circle.copy(head)
+                random.circle.notifyChange()
+                direction = random.direction
+
+                var temp = head
+                head = random.circle
+
+                //向head方向移动数据
+                for (index in 1 until line.size) {
+                    val circle = line[index]
+
+                    temp.copy(circle)
+                    temp.notifyChange()
+                    temp = circle
+                }
+
+                val last = line.removeAt(line.size - 1)//去尾
+                last.clear()//不要尾部的数据了
+                last.notifyChange()
+                line.add(0, head)//加头
+
+                Thread.sleep(500)
+            }
         }
     }
     //**************************************** Adapter End ****************************************
@@ -598,7 +594,6 @@ class MainActivity : AppCompatActivity() {
         val tvText: TextView = rvParent.findViewById(R.id.circle_tvTxt2)
         val tvText3: TextView = rvParent.findViewById(R.id.circle_tvTxt3)
     }
-    //endregion
 }
 
 
@@ -637,6 +632,28 @@ open class Circle(
 
     enum class TYPE {
         None, White, Black, Test;
+
+        /**获取该类型的资源*/
+        val resource: Int
+            get() {
+                return when (this) {
+                    Black -> R.drawable.ic_bg_circle_black
+                    White -> R.drawable.ic_bg_circle_white
+                    Test  -> R.drawable.ic_bg_circle_blue
+                    else  -> R.drawable.ic_bg_rectangle
+                }
+            }
+
+        /**获取该类型的颜色*/
+        val color: Int
+            get() {
+                return when (this) {
+                    White -> Color.WHITE
+                    Black -> Color.BLACK
+                    Test  -> Color.BLUE
+                    else  -> Color.YELLOW
+                }
+            }
 
         override fun toString(): String = name
 
