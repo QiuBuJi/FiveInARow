@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Handler
 import android.os.Message
+import android.util.Log
 import android.util.TypedValue
 import android.view.*
 import android.widget.TextView
@@ -19,7 +20,7 @@ import kotlinx.android.synthetic.main.activity_main.*
 const val TAG = "msg_mine"
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var adapter: Adapter
+    private var adapter: Adapter? = null
 
     //region Companion
     companion object {
@@ -51,16 +52,17 @@ class MainActivity : AppCompatActivity() {
 
     /**交换adapter*/
     private fun swapAdapter(point: Point) {
+        adapter?.run {
+            if (threadsSnake.isNotEmpty()) {
+                for (thread in threadsSnake) thread.interrupt()
+                threadsSnake.clear()
+            }
+        }
         //设置棋盘适配器
         adapter = Adapter(this, main_rvTable, point.x, point.y)
         main_rvTable.swapAdapter(adapter, true)
-        main_rvTable.layoutManager = GridLayoutManager(this, adapter.width)
+        main_rvTable.layoutManager = GridLayoutManager(this, adapter!!.width)
         main_rvTable.setHasFixedSize(true)
-    }
-
-    override fun onStart() {
-        super.onStart()
-
     }
 
     private val group1 = 1
@@ -94,15 +96,15 @@ class MainActivity : AppCompatActivity() {
                 //设置哪种类型的棋先下
                 group1 -> {
                     when (itemId) {
-                        1 -> adapter.currentType = Circle.TYPE.WHITE
-                        2 -> adapter.currentType = Circle.TYPE.BLACK
+                        1 -> adapter!!.currentType = Circle.TYPE.WHITE
+                        2 -> adapter!!.currentType = Circle.TYPE.BLACK
                     }
                 }
                 //设置棋盘格数
                 group2 -> {
                     val split = title.split("*")
                     point = when (itemId) {
-                        0    -> return@run
+                        0 -> return@run
                         else -> Point(split[0].toInt(), split[1].toInt())
                     }
                     swapAdapter(point)
@@ -201,22 +203,22 @@ class MainActivity : AppCompatActivity() {
         /**转换为方位数据*/
         private fun getDirection(x: Int, y: Int): Direction {
             return when (x) {
-                -1   ->
+                -1 ->
                     when (y) {
-                        -1   -> Direction.LeftTop
-                        0    -> Direction.Left
+                        -1 -> Direction.LeftTop
+                        0 -> Direction.Left
                         else -> Direction.LeftBottom
                     }
-                0    ->
+                0 ->
                     when (y) {
-                        -1   -> Direction.Top
-                        0    -> Direction.None
+                        -1 -> Direction.Top
+                        0 -> Direction.None
                         else -> Direction.Bottom
                     }
                 else ->
                     when (y) {
-                        -1   -> Direction.RightTop
-                        0    -> Direction.Right
+                        -1 -> Direction.RightTop
+                        0 -> Direction.Right
                         else -> Direction.RightBottom
                     }
             }
@@ -340,18 +342,25 @@ class MainActivity : AppCompatActivity() {
                 //取currCircle周围棋子为currCircle.type类型的数据
                 val surrounds = currCircle.getSurrounds { it.circle.type == currCircle.type }
 
-                for (surround in surrounds) {
+                for (circleD in surrounds) {
                     //数据被用则不再使用
-                    val state = surround.direction.direS.value and surround.circle.direS_int
+                    val state = circleD.direction.direS.value and circleD.circle.direS_int
                     if (state > 0) continue
 
                     //取周围该点的直线数据
-                    val line = surround.getDirectionLine { it.circle.type == currCircle.type }
+                    val line = circleD.getDirectionLine { it.circle.type == currCircle.type }
                     if (line.isNotEmpty()) linesTemp.add(line)//不要空的
                 }
                 //连接直线
                 val connectLines = currCircle.connectLines(linesTemp, true)
                 lines.addAll(connectLines)
+
+                //该点棋子没能组成直线，也要加入它
+                if (surrounds.isEmpty()) {
+                    val arrayList = ArrayList<CircleD>()
+                    arrayList.add(CircleD(currCircle, Direction.None))
+                    lines.add(arrayList)
+                }
             }
             for (circle in table) circle.direS_int = 0
             return lines
@@ -377,8 +386,8 @@ class MainActivity : AppCompatActivity() {
 
                 itemView.layoutParams.height = sizePieces//配置初始化数据
                 circle.tvText = tvCircle
-                circle.tvText1 = tvText
-                tvText.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizeReal)
+                circle.tvText2 = tvText2
+                tvText2.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizeReal)
 
                 tvCircle.run {
                     //文字尺寸适配框大小
@@ -391,9 +400,12 @@ class MainActivity : AppCompatActivity() {
                     setBackgroundResource(circle.type.resource)
                     setOnClickListener {
                         //设置不能在同一个地方重复下棋
-                        if (circle.show) return@setOnClickListener
-
+                        if (circle.show) {
+                            showTableLines(circle.type)
+                            return@setOnClickListener
+                        }
                         //保存上一次，下的是什么棋
+
                         circle.show = true
                         circle.type = currentType
                         currentType = currentType.alter
@@ -411,60 +423,221 @@ class MainActivity : AppCompatActivity() {
                 //显示下标
                 tvText3.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePieces * 0.16f)
                 tvText3.text = position.toString()
+            }
+        }
 
-                tvCircle.setOnLongClickListener {
-                    val tableData = getTableLines()
+        private fun showTableLines(type: Circle.TYPE) {
+            val tableLines =
+                getTableLines().filter { it[0].circle.type == type } as ArrayList<ArrayList<CircleD>>
+            tableLines.sortByDescending { it.size }
 
-//                    detect(circle)
-                    if (tableData.isNotEmpty()) {
-                        Thread {
-                            for (line in tableData) {
-                                for (circle in line) {
-                                    handler.send {
-                                        circle.circle?.text = "●"
-                                        circle.circle.tvText1?.setTextColor(circle.circle.type.alter.color)
-                                    }
-                                }
-
-                                val l: Long = 500
-                                Thread.sleep(l)
-                                for (circle in line) {
-                                    handler.send {
-                                        circle.circle.tvText1?.text = ""
-                                        circle.circle.tvText1?.setTextColor(circle.circle.type.color)
-                                    }
-                                }
-                                Thread.sleep(l)
+            //                    detect(circle)
+            if (tableLines.isNotEmpty()) {
+                Thread {
+                    for (line in tableLines) {
+                        for (circleD in line) {
+                            handler.send {
+                                circleD.circle.tvText2?.text = "●"
+                                circleD.circle.tvText2?.setTextColor(circleD.circle.type.alter.color)
                             }
+                        }
 
-                        }.start()
+                        val duration: Long = 300
+                        Thread.sleep(duration)
+                        for (circleD in line) {
+                            handler.send {
+                                circleD.circle.tvText2?.text = ""
+                                circleD.circle.tvText2?.setTextColor(circleD.circle.type.color)
+                            }
+                        }
+                        Thread.sleep(duration)
                     }
 
-                    true
-                }
+                }.start()
             }
         }
 
         private fun runAI(type: Circle.TYPE) {
             if (currentType != type) return
 
-            Thread {
+            val thread = Thread {
                 Thread.sleep(500)
+                Log.d(TAG, "------------------------------------------------------------------")
 
-                val tableLines = getTableLines()
-                var ownLines = tableLines.filter { it[0].circle.type == type }
+                val group = getTableLines().groupBy { it.first().circle.type }
 
-                var max: Int = 0
-                for (ownLine in ownLines) if (ownLine.size > max) max = ownLine.size
+                //排除不属于自己的类型
+                val linesMyOwn = (group[type] ?: ArrayLines()) as ArrayLines
+                val linesEnemy = (group[type.alter] ?: ArrayLines()) as ArrayLines
+                linesMyOwn.sortByDescending { it.size }//大到小排序
+                linesEnemy.sortByDescending { it.size }//大到小排序
 
-                ownLines = ownLines.sortedByDescending { it.size }
+                var firstEnemy: ArrayList<CircleD>? = null
+                var firstMyOwn: ArrayList<CircleD>? = null
 
-                for (line in ownLines) {
-
+                try {
+                    firstEnemy = linesEnemy.first()
+                    firstMyOwn = linesMyOwn.first()
+                } catch (e: Exception) {
                 }
 
+                //去除无意义直线
+                val deadLines = linesMyOwn.removeDeadLines()
+                linesEnemy.removeDeadLines()
 
-            }.start()
+                when {
+                    firstEnemy != null && (firstEnemy.size > 3 || linesMyOwn.isEmpty()) -> {
+                        Log.d(TAG, "runAI: firstEnemy.size > 3 || linesMyOwn.isEmpty()")
+
+                        when {
+                            //敌人棋子长度是3了，不得不扼杀它
+                            firstEnemy.size >= 3 || deadLines.isEmpty() -> {
+                                val remainBlank = firstEnemy.getRemainBlanks()
+
+                                if (remainBlank.isNotEmpty()) {
+                                    val circleD = remainBlank.first()
+                                    handler.send { circleD.circle.tvText?.performClick() }
+                                    Log.d(TAG, "runAI: has remain")
+                                } else {
+                                    Log.d(TAG, "runAI: no more remain")
+                                }
+                            }
+                            //我方没有现成的“直线”或者“自由点”可用
+                            linesMyOwn.isEmpty() -> {
+                                if (deadLines.isNotEmpty()) {
+                                    Log.d(TAG, "runAI: deadLines has data")
+                                    var random = deadLines.random()
+                                    val availableLines = random.getAvailableLines()
+                                    availableLines.removeIf { it.size < 5 }
+                                    random = availableLines.random()
+
+                                    var circleD: CircleD? = null
+                                    for (temp in random) {
+                                        if (temp.circle.type != Circle.TYPE.NONE) break
+                                        circleD = temp
+                                    }
+                                    if (circleD == null) circleD = random[1]
+                                    handler.send { circleD.circle.tvText?.performClick() }
+
+                                } else {
+                                    Log.d(TAG, "runAI: deadLines not data")
+
+                                }
+
+                            }
+                        }
+
+
+                    }
+                    else -> {
+                        Log.d(TAG, "runAI: normal process")
+
+                        for (line in linesMyOwn) {
+                            val temp = ArrayList<CircleD>()
+
+                            if (line.size == 1) {
+                                val remainBlank = line.getRemainBlanks()
+                                if (remainBlank.isNotEmpty()) temp.add(remainBlank.random())
+                            } else {
+                                for (circleD in line) {
+                                    val surrounds = circleD.circle.getSurrounds {
+                                        it.direction.direS == circleD.direction.direS && it.circle.type == Circle.TYPE.NONE
+                                    }
+                                    temp.addAll(surrounds)
+                                }
+                            }
+
+                            if (temp.isNotEmpty()) {
+                                Log.d(TAG, "runAI: has line data")
+                                val random = temp.random()
+                                handler.send { random.circle.tvText?.performClick() }
+                                break
+                            } else {
+                                Log.d(TAG, "runAI: has not line data")
+
+                            }
+                        }
+                    }
+                }
+                Log.d(TAG, "------------------------------------------------------------------")
+            }
+            thread.start()
+        }
+
+        /**获取该直线周围有用的直线*/
+        private fun ArrayLine.getAvailableLines(): ArrayLines {
+            val linesOut = ArrayLines()
+
+            for (circleD in this) {
+                val surrounds = circleD.circle.getSurrounds {
+                    it.circle.type != circleD.circle.type.alter && it.direction.direS != circleD.direction.direS
+                }
+
+                val lines = ArrayLines()
+                for (surround in surrounds) {
+                    val directionLine = surround.getDirectionLine {
+                        it.circle.type != circleD.circle.type.alter && it.direction.direS != circleD.direction.direS
+                    }
+                    lines.add(directionLine)
+                }
+                val connectLines = circleD.circle.connectLines(lines)
+                linesOut.addAll(connectLines)
+            }
+            return linesOut
+        }
+
+        /**去除没有胜利意义的直线*/
+        private fun ArrayLines.removeDeadLines(): ArrayLines {
+            val iterator = iterator()
+            val deadLines = ArrayLines()
+
+            while (iterator.hasNext()) {
+                val next = iterator.next()
+                val remainBlanks = next.getRemainBlanks()
+                val finalSize = remainBlanks.size + next.size
+                if (finalSize < 5) {
+                    deadLines.add(next)
+                    iterator.remove()
+                }
+            }
+            return deadLines
+        }
+
+        /**获取该直线还能继续扩展的地方*/
+        private fun ArrayLine.getRemainBlanks(): ArrayList<CircleD> {
+            val line = this
+            return if (line.size == 1) {
+                //取周围的空白格子
+                line.first().circle.getSurrounds { it.circle.type == Circle.TYPE.NONE }
+            } else {
+                val first = line.first()
+                val blanks = ArrayList<CircleD>()
+
+                //取该方向的空白格子
+                first.traverseDirection {
+                    when (it.circle.type) {
+                        Circle.TYPE.NONE -> {
+                            blanks.add(it)
+                            true
+                        }
+                        first.circle.type -> true
+                        else -> false
+                    }
+                }
+                //取反方向的空白格子
+                first.direction = !first.direction
+                first.traverseDirection {
+                    when (it.circle.type) {
+                        Circle.TYPE.NONE -> {
+                            blanks.add(it)
+                            true
+                        }
+                        first.circle.type -> true
+                        else -> false
+                    }
+                }
+                blanks
+            }
         }
 
         /**给直线每个格子设置文字*/
@@ -513,6 +686,7 @@ class MainActivity : AppCompatActivity() {
 
         private var food = Circle.TYPE.FOOD
 
+        val threadsSnake = ArrayList<Thread>()
         //贪吃蛇游戏代码部分 ************************************************************
         private fun gameSnake(it: ArrayList<ArrayList<CircleD>>) {
             for (line in it) {
@@ -551,7 +725,7 @@ class MainActivity : AppCompatActivity() {
                                         Direction.RightBottom,
                                         Direction.LeftTop,
                                         Direction.LeftBottom
-                                             -> false
+                                        -> false
                                         else -> true
                                     }
                         }
@@ -623,8 +797,16 @@ class MainActivity : AppCompatActivity() {
                         }
                         line.add(0, head)//加头
 
-                        Thread.sleep(100)
+                        //捕获中断退出贪吃蛇程序
+                        try {
+                            Thread.sleep(500)
+                        } catch (e: Exception) {
+                            break
+                        }
+
                     }//***贪吃蛇循环 - 尾部***
+                }.apply {
+                    threadsSnake.add(this)
                 }.start()
 
             }
@@ -642,7 +824,7 @@ class MainActivity : AppCompatActivity() {
 
     class Holder(rvParent: View) : RecyclerView.ViewHolder(rvParent) {
         val tvCircle: TextView = rvParent.findViewById(R.id.circle_tvTxt)
-        val tvText: TextView = rvParent.findViewById(R.id.circle_tvTxt2)
+        val tvText2: TextView = rvParent.findViewById(R.id.circle_tvTxt2)
         val tvText3: TextView = rvParent.findViewById(R.id.circle_tvTxt3)
     }
 }
@@ -657,7 +839,7 @@ open class Circle(
     var text: String = "",
     var direS_int: Int = 0,
     var tvText: TextView? = null,
-    var tvText1: TextView? = null,
+    var tvText2: TextView? = null,
     var index: Int = -1
 ) {
 
@@ -690,9 +872,9 @@ open class Circle(
                 return when (this) {
                     BLACK -> R.drawable.ic_bg_circle_black
                     WHITE -> R.drawable.ic_bg_circle_white
-                    TEST  -> R.drawable.ic_bg_circle_blue
-                    FOOD  -> R.drawable.ic_bg_food
-                    else  -> R.drawable.ic_bg_rectangle
+                    TEST -> R.drawable.ic_bg_circle_blue
+                    FOOD -> R.drawable.ic_bg_food
+                    else -> R.drawable.ic_bg_rectangle
                 }
             }
 
@@ -702,8 +884,8 @@ open class Circle(
                 return when (this) {
                     WHITE -> Color.WHITE
                     BLACK -> Color.BLACK
-                    TEST  -> Color.BLUE
-                    else  -> Color.YELLOW
+                    TEST -> Color.BLUE
+                    else -> Color.YELLOW
                 }
             }
 
@@ -714,8 +896,8 @@ open class Circle(
                 return when (this) {
                     WHITE -> "白棋"
                     BLACK -> "黑棋"
-                    TEST  -> "测试"
-                    else  -> "空"
+                    TEST -> "测试"
+                    else -> "空"
                 }
             }
 
@@ -725,7 +907,7 @@ open class Circle(
                 return when (this) {
                     WHITE -> BLACK
                     BLACK -> WHITE
-                    else  -> TEST
+                    else -> TEST
                 }
             }
     }
@@ -733,9 +915,10 @@ open class Circle(
 
 class CircleD(val circle: Circle, var direction: Direction) {
 
-    override fun toString(): String = "direction = $direction"
+    override fun toString(): String = "direction = $direction   index = ${circle.index}"
 }
 
+/**方向枚举类，简化枚举*/
 enum class DirectionS(val value: Int) {
     /**─*/
     Horizontal(1),
@@ -766,14 +949,15 @@ enum class DirectionS(val value: Int) {
         get() {
             return when (this) {
                 Horizontal -> "─"
-                Vertical   -> "│"
-                CantLeft   -> "╲"
-                CantRight  -> "╱"
-                else       -> "╳"
+                Vertical -> "│"
+                CantLeft -> "╲"
+                CantRight -> "╱"
+                else -> "╳"
             }
         }
 }
 
+/**方向枚举类*/
 enum class Direction {
     None,
     Left,
@@ -789,43 +973,47 @@ enum class Direction {
     /**取反操作*/
     operator fun not(): Direction {
         return when (this) {
-            Left        -> Right
-            Top         -> Bottom
-            LeftTop     -> RightBottom
-            LeftBottom  -> RightTop
+            Left -> Right
+            Top -> Bottom
+            LeftTop -> RightBottom
+            LeftBottom -> RightTop
 
-            Right       -> Left
-            Bottom      -> Top
+            Right -> Left
+            Bottom -> Top
             RightBottom -> LeftTop
-            RightTop    -> LeftBottom
-            else        -> None
+            RightTop -> LeftBottom
+            else -> None
         }
     }
 
+    /**Direction转换DirectionS后的值*/
     val direS: DirectionS
         get() {
             return when (this) {
-                Left, Right          -> DirectionS.Horizontal
-                Top, Bottom          -> DirectionS.Vertical
+                Left, Right -> DirectionS.Horizontal
+                Top, Bottom -> DirectionS.Vertical
                 LeftTop, RightBottom -> DirectionS.CantLeft
                 LeftBottom, RightTop -> DirectionS.CantRight
-                else                 -> DirectionS.None
+                else -> DirectionS.None
             }
         }
 
     override fun toString(): String {
         val strDirection = when (this) {
-            Left        -> "←"
-            Top         -> "↑"
-            Right       -> "→"
-            Bottom      -> "↓"
-            LeftTop     -> "↖"
-            LeftBottom  -> "↙"
-            RightTop    -> "↗"
+            Left -> "←"
+            Top -> "↑"
+            Right -> "→"
+            Bottom -> "↓"
+            LeftTop -> "↖"
+            LeftBottom -> "↙"
+            RightTop -> "↗"
             RightBottom -> "↘"
-            else        -> "㊣"
+            else -> "㊣"
         }
         return "$strDirection  ($name)"
     }
 }
 //endregion
+
+typealias  ArrayLines = ArrayList<ArrayList<CircleD>>
+typealias  ArrayLine = ArrayList<CircleD>
