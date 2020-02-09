@@ -16,6 +16,7 @@ import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import kotlinx.android.synthetic.main.activity_main.*
+import kotlin.random.Random
 
 const val TAG = "msg_mine"
 
@@ -398,32 +399,37 @@ class MainActivity : AppCompatActivity() {
                     text = circle.text
                     setTextColor(circle.textColor)
                     setBackgroundResource(circle.type.resource)
-                    setOnClickListener {
-                        //设置不能在同一个地方重复下棋
-                        if (circle.show) {
-                            showTableLines(circle.type)
-                            return@setOnClickListener
-                        }
-                        //保存上一次，下的是什么棋
-
-                        circle.show = true
-                        circle.type = currentType
-                        currentType = currentType.alter
-                        typeDefault = currentType
-
-                        //检查棋盘
-                        tableChecking(circle)
-                        //通知该位置刷新显示的数据
-                        circle.notifyChange()
-
-                        runAI(Circle.TYPE.BLACK)
-                    }
+                    setOnClickListener { circle.clicked() }
                 }
 
                 //显示下标
                 tvText3.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePieces * 0.16f)
                 tvText3.text = position.toString()
             }
+        }
+
+        /**格子被单击*/
+        private fun Circle.clicked() {
+            val circle = this
+
+            //设置不能在同一个地方重复下棋
+            if (circle.show) {
+                showTableLines(circle.type)
+                return
+            }
+            //保存上一次，下的是什么棋
+
+            circle.show = true
+            circle.type = currentType
+            currentType = currentType.alter
+            typeDefault = currentType
+
+            //检查棋盘
+            tableChecking(circle)
+            //通知该位置刷新显示的数据
+            circle.notifyChange()
+
+            runAI(Circle.TYPE.BLACK)
         }
 
         private fun showTableLines(type: Circle.TYPE) {
@@ -472,100 +478,188 @@ class MainActivity : AppCompatActivity() {
                 linesMyOwn.sortByDescending { it.size }//大到小排序
                 linesEnemy.sortByDescending { it.size }//大到小排序
 
-                var firstEnemy: ArrayList<CircleD>? = null
-                var firstMyOwn: ArrayList<CircleD>? = null
+                var enemyThreat: ArrayLine? = null
+                var myOwnThreat: ArrayLine? = null
+
+                //去除无意义直线
+                val deadLinesMyOwn = linesMyOwn.removeDeadLines()
+                val deadLinesEnemy = linesEnemy.removeDeadLines()
 
                 try {
-                    firstEnemy = linesEnemy.first()
-                    firstMyOwn = linesMyOwn.first()
+                    enemyThreat = linesEnemy.first()
+                    myOwnThreat = linesMyOwn.first()
                 } catch (e: Exception) {
                 }
 
-                //去除无意义直线
-                val deadLines = linesMyOwn.removeDeadLines()
-                linesEnemy.removeDeadLines()
+                //直线两端的空格子
+                var lineEndBlank = ArrayLine()
 
+                //AI逻辑代码部分---------------------------------------------------------------------
                 when {
-                    firstEnemy != null && (firstEnemy.size > 3 || linesMyOwn.isEmpty()) -> {
-                        Log.d(TAG, "runAI: firstEnemy.size > 3 || linesMyOwn.isEmpty()")
+                    enemyThreat != null && (enemyThreat.size >= 3 || linesMyOwn.isEmpty()) -> {
+
+                        //enemyThreat直线长度大于等于3就满足条件，如果它是半阻塞状态则不能满足
+                        val stateLength = enemyThreat.size >= 3 && !enemyThreat.isHalfBlocked()
+                        //enemyThreat直线长度>=4,已经迫在眉睫，敌人快赢了！
+                        val stateLengthThreat = enemyThreat.size >= 4
+                        val empty = deadLinesMyOwn.isEmpty()
+
 
                         when {
-                            //敌人棋子长度是3了，不得不扼杀它
-                            firstEnemy.size >= 3 || deadLines.isEmpty() -> {
-                                val remainBlank = firstEnemy.getRemainBlanks()
+                            //敌人棋子长度是3了，不得不扼杀它 ****************************************
+                            stateLength || stateLengthThreat || empty -> {
+                                Log.d(TAG, "505 runAI: 敌人棋子长度是>=3了")
 
-                                if (remainBlank.isNotEmpty()) {
-                                    val circleD = remainBlank.first()
-                                    handler.send { circleD.circle.tvText?.performClick() }
-                                    Log.d(TAG, "runAI: has remain")
-                                } else {
-                                    Log.d(TAG, "runAI: no more remain")
+                                //myOwnThreat自己的直线，如果长度>=3占优势，满足条件，给自己优势的直线继续扩展
+                                val stateLengthMyOwn = myOwnThreat?.size ?: 0 >= 3
+                                val edgeBlanks = ArrayLine()
+
+
+                                //根据条件，是给自己造势，还是压制敌人
+                                lineEndBlank =
+                                    if (stateLengthMyOwn) {
+                                        Log.d(TAG, "505 runAI: 给自己造势")
+
+                                        myOwnThreat!!.getLineEndBlanks(edgeBlanks)//给自己造势
+                                    } else //给自己造势
+                                    {
+                                        Log.d(TAG, "505 runAI: 压制敌人")
+
+                                        enemyThreat.getLineEndBlanks(edgeBlanks)//压制敌人
+                                    }
+
+
+                                if (edgeBlanks.isNotEmpty()) {
+                                    lineEndBlank = edgeBlanks
+                                    Log.d(TAG, "527 runAI: $edgeBlanks")
                                 }
                             }
-                            //我方没有现成的“直线”或者“自由点”可用
+                            //我方没有现成的“直线”或者“自由点”可用 ***********************************
                             linesMyOwn.isEmpty() -> {
-                                if (deadLines.isNotEmpty()) {
-                                    Log.d(TAG, "runAI: deadLines has data")
-                                    var random = deadLines.random()
-                                    val availableLines = random.getAvailableLines()
-                                    availableLines.removeIf { it.size < 5 }
-                                    random = availableLines.random()
+                                //从自己死胡同了的直线，发展分支
+                                if (deadLinesMyOwn.isNotEmpty()) {
+                                    Log.d(TAG, "有死直线数据")
 
-                                    var circleD: CircleD? = null
-                                    for (temp in random) {
-                                        if (temp.circle.type != Circle.TYPE.NONE) break
-                                        circleD = temp
+                                    val deadLine = deadLinesMyOwn.random()//随机取一条死直线
+                                    val liveLines = deadLine.getLiveLines()//取活直线
+                                    liveLines.removeIf { it.size < 5 }//去除没有赢意图的直线
+                                    liveLines.sortByDescending { it.size }//从大到小排序
+
+                                    for (liveLine in liveLines) {
+                                        liveLine.removeIf { it.circle.type != Circle.TYPE.NONE }
+                                        lineEndBlank = liveLine
+
+                                        Log.d(TAG, "528 runAI: 得到活直线")
+                                        break
                                     }
-                                    if (circleD == null) circleD = random[1]
-                                    handler.send { circleD.circle.tvText?.performClick() }
+
+                                    if (liveLines.isEmpty()) {
+                                        Log.d(TAG, "533 runAI: 无活直线")
+                                    }
 
                                 } else {
-                                    Log.d(TAG, "runAI: deadLines not data")
-
+                                    Log.d(TAG, "无死直线数据")
                                 }
 
+                            }
+                            //其它状况**************************************************************
+                            else -> {
+                                //随机，进攻还是防御
+                                val stateIntrudeDefend = arrayListOf(true, false).random()
+                                val edgeBlanks = ArrayLine()
+
+                                lineEndBlank =
+                                    if (stateIntrudeDefend)
+                                        myOwnThreat!!.getLineEndBlanks(edgeBlanks)//给自己造势
+                                    else enemyThreat.getLineEndBlanks(edgeBlanks)//压制敌人
+
+                                if (edgeBlanks.isNotEmpty()) lineEndBlank = edgeBlanks
+
+                                Log.d(TAG, "随机，进攻还是防御 $stateIntrudeDefend")
                             }
                         }
 
 
                     }
+                    //分支 *************************************************************************
                     else -> {
-                        Log.d(TAG, "runAI: normal process")
+                        Log.d(TAG, "535 runAI: 造势中...")
 
+                        //扩展我方最有潜力的直线，直线越长权重越大
                         for (line in linesMyOwn) {
-                            val temp = ArrayList<CircleD>()
 
+                            //直线长度等于1时的分支***************************************************
                             if (line.size == 1) {
-                                val remainBlank = line.getRemainBlanks()
-                                if (remainBlank.isNotEmpty()) temp.add(remainBlank.random())
-                            } else {
+                                Log.d(TAG, "541 runAI: 直线长度为1")
+
+                                val liveLines = line.getLiveLines()
+                                //不要最终长度不能达到5颗棋子的直线
+                                liveLines.removeIf { it.size < 5 }
+
+                                if (liveLines.isNotEmpty()) {
+                                    var iterator = liveLines.iterator()
+                                    val withIndex = iterator.withIndex()
+
+                                    while (withIndex.hasNext()) {
+                                        val (index, list) = withIndex.next()
+                                        if (index > 3) iterator.remove()
+                                    }
+
+                                    val liveLine = liveLines.random()
+                                    liveLine.removeIf { it.circle.type != Circle.TYPE.NONE }
+                                    val blank = liveLine.random()
+                                    lineEndBlank.add(blank)
+
+                                    Log.d(TAG, "551 runAI: 有活直线数据  $blank")
+                                    break
+                                }
+
+                            }
+                            //直线长度大于1的分支*****************************************************
+                            else {
                                 for (circleD in line) {
                                     val surrounds = circleD.circle.getSurrounds {
                                         it.direction.direS == circleD.direction.direS && it.circle.type == Circle.TYPE.NONE
                                     }
-                                    temp.addAll(surrounds)
+                                    lineEndBlank.addAll(surrounds)
                                 }
-                            }
-
-                            if (temp.isNotEmpty()) {
-                                Log.d(TAG, "runAI: has line data")
-                                val random = temp.random()
-                                handler.send { random.circle.tvText?.performClick() }
                                 break
-                            } else {
-                                Log.d(TAG, "runAI: has not line data")
-
                             }
                         }
+
+                        //else end
                     }
                 }
-                Log.d(TAG, "------------------------------------------------------------------")
+
+                //下棋程序
+                if (lineEndBlank.isNotEmpty()) {
+                    val blank = lineEndBlank.random()
+                    handler.send { blank.circle.clicked() }
+
+                    Log.d(TAG, "573 runAI: 下棋   $blank")
+                } else {
+
+                    Log.d(TAG, "577 runAI: 没棋可下")
+                }
+
+                //AI逻辑代码部分 End ----------------------------------------------------------------
+                Log.d(TAG, "runAI: end")
             }
             thread.start()
         }
 
+        /**是否一端是阻塞的*/
+        private fun ArrayLine.isHalfBlocked(): Boolean {
+            val first = first()
+
+            if (first.getDirectionBlanks().size == 0) return true
+            first.direction = first.direction.not()
+            if (first.getDirectionBlanks().size == 0) return true
+            return false
+        }
+
         /**获取该直线周围有用的直线*/
-        private fun ArrayLine.getAvailableLines(): ArrayLines {
+        private fun ArrayLine.getLiveLines(): ArrayLines {
             val linesOut = ArrayLines()
 
             for (circleD in this) {
@@ -593,8 +687,9 @@ class MainActivity : AppCompatActivity() {
 
             while (iterator.hasNext()) {
                 val next = iterator.next()
-                val remainBlanks = next.getRemainBlanks()
+                val remainBlanks = next.getLineEndBlanks()
                 val finalSize = remainBlanks.size + next.size
+
                 if (finalSize < 5) {
                     deadLines.add(next)
                     iterator.remove()
@@ -604,40 +699,44 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**获取该直线还能继续扩展的地方*/
-        private fun ArrayLine.getRemainBlanks(): ArrayList<CircleD> {
+        private fun ArrayLine.getLineEndBlanks(edgeBlanks: ArrayLine? = null): ArrayList<CircleD> {
             val line = this
             return if (line.size == 1) {
                 //取周围的空白格子
-                line.first().circle.getSurrounds { it.circle.type == Circle.TYPE.NONE }
+                val surrounds =
+                    line.first().circle.getSurrounds { it.circle.type == Circle.TYPE.NONE }
+                edgeBlanks?.addAll(surrounds)
+                surrounds
             } else {
                 val first = line.first()
                 val blanks = ArrayList<CircleD>()
 
                 //取该方向的空白格子
-                first.traverseDirection {
-                    when (it.circle.type) {
-                        Circle.TYPE.NONE -> {
-                            blanks.add(it)
-                            true
-                        }
-                        first.circle.type -> true
-                        else -> false
-                    }
-                }
+                blanks.addAll(first.getDirectionBlanks()
+                                  .apply { if (isNotEmpty()) edgeBlanks?.add(first()) })
                 //取反方向的空白格子
                 first.direction = !first.direction
-                first.traverseDirection {
-                    when (it.circle.type) {
-                        Circle.TYPE.NONE -> {
-                            blanks.add(it)
-                            true
-                        }
-                        first.circle.type -> true
-                        else -> false
-                    }
-                }
+                blanks.addAll(first.getDirectionBlanks()
+                                  .apply { if (isNotEmpty()) edgeBlanks?.add(first()) })
                 blanks
             }
+        }
+
+        /**取单方向的空白格子*/
+        private fun CircleD.getDirectionBlanks(): ArrayList<CircleD> {
+            val blanks = ArrayList<CircleD>()
+
+            this.traverseDirection {
+                when (it.circle.type) {
+                    Circle.TYPE.NONE -> {
+                        blanks.add(it)
+                        true
+                    }
+                    this.circle.type -> true
+                    else -> false
+                }
+            }
+            return blanks
         }
 
         /**给直线每个格子设置文字*/
@@ -694,20 +793,27 @@ class MainActivity : AppCompatActivity() {
                     var direction: Direction = Direction.Right
 
                     //贪吃蛇“结束”程序
-                    fun deathProgress(line: java.util.ArrayList<CircleD>) {
+                    fun deathProgress(line: java.util.ArrayList<CircleD>): Boolean {
                         //显示死时候的样貌
                         for (circle in line) {
                             circle.circle.textColor = Color.RED
                             circle.circle.notifyChange()
                         }
                         insertText(line, "我死了********")
-                        Thread.sleep(2000)
+
+                        //捕获中断退出贪吃蛇程序
+                        try {
+                            Thread.sleep(2000)
+                        } catch (e: Exception) {
+                            return true
+                        }
 
                         //复原数据
                         for (circle in line) {
                             circle.circle.clear()
                             circle.circle.notifyChange()
                         }
+                        return false
                     }
 
                     //***贪吃蛇循环***
@@ -738,12 +844,12 @@ class MainActivity : AppCompatActivity() {
                             surroundBoxes.random()//随机获取方向
                         } catch (e: Exception) {
                             //没有方向可以行走，死亡程序开始
-                            deathProgress(line)
+                            if (deathProgress(line)) break
                             break
                         }
                         //没有方向可以行走，死亡程序开始
                         if (surroundBoxes.isEmpty()) {
-                            deathProgress(line)
+                            if (deathProgress(line)) break
                             break
                         }
 
@@ -1010,7 +1116,7 @@ enum class Direction {
             RightBottom -> "↘"
             else -> "㊣"
         }
-        return "$strDirection  ($name)"
+        return "$strDirection"
     }
 }
 //endregion
