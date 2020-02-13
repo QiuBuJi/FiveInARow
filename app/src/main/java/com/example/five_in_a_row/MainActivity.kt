@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
         lateinit var mTvCircle: TextView
         val sizeScreen = Point()
         var heightMain: Int = 0
-        var typeDefault: Circle.TYPE = Circle.TYPE.WHITE
+        var typeDefault: TYPE = TYPE.WHITE
     }
     //endregion
 
@@ -126,7 +126,7 @@ class MainActivity : AppCompatActivity() {
                 //设置哪种类型的棋先下
                 group1 -> {
                     when (itemId) {
-                        1 -> adapter!!.currentType = Circle.TYPE.WHITE
+                        1 -> adapter!!.currentType = TYPE.WHITE
                         2 -> adapter!!.currentType = TYPE.BLACK
                     }
                 }
@@ -175,7 +175,12 @@ class MainActivity : AppCompatActivity() {
 
                                     val split1 = str.split("-")
                                     val index = split1[0].toInt()
-                                    adapter?.run { table[index].type = TYPE.valueOf(split1[1]) }
+                                    adapter?.run {
+                                        table[index].run {
+                                            type = TYPE.valueOf(split1[1])
+                                            show = true
+                                        }
+                                    }
                                 }
                                 adapter?.notifyDataSetChanged()
                             }
@@ -442,7 +447,7 @@ class MainActivity : AppCompatActivity() {
         //endregion
         //******************************************************************************************
         /**当前该下棋的类型*/  //这个初始化不管用
-        var currentType: Circle.TYPE = typeDefault
+        var currentType: TYPE = typeDefault
             @SuppressLint("SetTextI18n")
             set(value) {
                 field = value
@@ -483,10 +488,12 @@ class MainActivity : AppCompatActivity() {
 
                 //显示下标
                 tvText3.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePieces * 0.16f)
-                tvText3.text = position.toString()
+                tvText3.text = ""
+//                tvText3.text = position.toString()
             }
         }
 
+        private var mIsWon: Boolean = false
         /**格子被单击*/
         private fun Circle.clicked(runAI: Boolean = true) {
             val circle = this
@@ -501,7 +508,7 @@ class MainActivity : AppCompatActivity() {
                         if (circleD.circle == this) {
                             Thread {
                                 val liveLines = tableLine.getSurroundLiveLines()
-                                for (liveLine in liveLines) liveLine.flash(10000)
+                                for (liveLine in liveLines) liveLine.flash(1000)
                             }.start()
                             return
                         }
@@ -517,11 +524,12 @@ class MainActivity : AppCompatActivity() {
             typeDefault = currentType
 
             //检查棋盘
-            tableChecking(circle)
+            val isWon = tableChecking(circle)
+            if (isWon) mIsWon = true
             //通知该位置刷新显示的数据
             circle.notifyChange()
 
-            if (runAI) runAI(TYPE.BLACK)
+            if (runAI && !mIsWon) runAI(TYPE.BLACK)
         }
 
         /**获取两个棋子的方向*/
@@ -546,7 +554,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        private fun showTableLines(type: Circle.TYPE) {
+        private fun showTableLines(type: TYPE) {
             val tableLines =
                 getTableLines().filter { it[0].circle.type == type } as ArrayList<ArrayList<CircleD>>
             tableLines.sortByDescending { it.size }
@@ -579,7 +587,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**电脑下棋AI*/
-        private fun runAI(type: Circle.TYPE) {
+        private fun runAI(type: TYPE) {
             if (currentType != type) return
 
             val thread = Thread {
@@ -1097,7 +1105,7 @@ class MainActivity : AppCompatActivity() {
 
         /**让直线内的数据闪烁的显示*/
         private fun ArrayLine.flashCircle(
-            duration: Int = 1000, times: Int = 3, type: Circle.TYPE = TYPE.TEST
+            duration: Int = 1000, times: Int = 3, type: TYPE = TYPE.TEST
         ) {
             val edgeBlanks: ArrayLine = this
             val duration = duration / 2 / times
@@ -1108,7 +1116,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**1个闪烁周期*/
-        private fun ArrayLine.flash(type: Circle.TYPE, duration: Int = 1000) {
+        private fun ArrayLine.flash(type: TYPE, duration: Int = 1000) {
 
             for (blank in this) {
                 blank.circle.type = type
@@ -1189,16 +1197,6 @@ class MainActivity : AppCompatActivity() {
 
                 linesOut.addAll(connectLines)
             }//for end
-
-            //去除包含自己
-//            for (connectLine in linesOut) {
-//                connectLine.removeAll {
-//                    for (circleD in this) {
-//                        if (circleD.circle == it.circle) return@removeAll true
-//                    }
-//                    false
-//                }
-//            }
 
             linesOut.sortByDescending { it.size }//给自己从大到小排序
 
@@ -1329,14 +1327,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**棋盘检查,检查哪方胜利*/
-        private fun tableChecking(pCircle: Circle) {
+        private fun tableChecking(pCircle: Circle): Boolean {
             val detectWon = pCircle.detectWon()
 
             detectWon?.let {
                 Thread {
-                    val strWin = "太棒了你！！！！！"
+                    val strWin = " 你真棒•"
                     val getC = strWin.iterator()
                     food = pCircle.type.alter
+                    val tempType = pCircle.type
 
                     //有赢的数据，则执行赢程序 *******************************************************
                     for (line in it) {
@@ -1352,23 +1351,24 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     //加入贪吃蛇
-                    gameSnake(it)
+                    gameSnake(it, tempType)
                 }.start()
-
+                return true
             }
+            return false
         }
 
-        private var food = Circle.TYPE.FOOD
+        private var food = TYPE.FOOD
 
         val threadsSnake = ArrayList<Thread>()
         //贪吃蛇游戏代码部分 ************************************************************
-        private fun gameSnake(it: ArrayLines) {
-            for (line in it) {
+        private fun gameSnake(it: ArrayLines, type: TYPE) {
+            for (lineSnake in it) {
                 Thread {
                     var direction: Direction = Direction.Right
 
                     //贪吃蛇“结束”程序
-                    fun deathProgress(line: java.util.ArrayList<CircleD>): Boolean {
+                    fun deathProgress(line: ArrayLine): Boolean {
                         //显示死时候的样貌
                         for (circle in line) {
                             circle.circle.textColor = Color.RED
@@ -1393,9 +1393,9 @@ class MainActivity : AppCompatActivity() {
 
                     //***贪吃蛇循环***
                     while (true) {
-                        var head = line.first()
+                        var head = lineSnake.first()
                         if (head.circle.type == TYPE.NONE) break
-                        head.circle.textColor = Color.RED
+                        head.circle.type = type
 
                         //行走方向获取
                         var surroundBoxes = head.circle.getSurrounds {
@@ -1419,12 +1419,12 @@ class MainActivity : AppCompatActivity() {
                             surroundBoxes.random()//随机获取方向
                         } catch (e: Exception) {
                             //没有方向可以行走，死亡程序开始
-                            if (deathProgress(line)) break
+                            if (deathProgress(lineSnake)) break
                             break
                         }
                         //没有方向可以行走，死亡程序开始
                         if (surroundBoxes.isEmpty()) {
-                            if (deathProgress(line)) break
+                            if (deathProgress(lineSnake)) break
                             break
                         }
 
@@ -1458,25 +1458,25 @@ class MainActivity : AppCompatActivity() {
                         head = random
 
                         //向head方向移动数据
-                        for (index in 1 until line.size) {
-                            val circle = line[index]
+                        for (index in 1 until lineSnake.size) {
+                            val circle = lineSnake[index]
 
                             temp.circle.copy(circle.circle)
                             temp.circle.notifyChange()
                             temp = circle
                         }
 
-                        val last = line.last()
+                        val last = lineSnake.last()
                         //如果有食物
                         if (hasFood) {
                             //过滤掉除了条件以外的元素
                             val blankBox = table.filter { it.type == TYPE.NONE }
                         } else {
-                            line.remove(last)//去尾
+                            lineSnake.remove(last)//去尾
                             last.circle.clear()//不要尾部的数据了
                             last.circle.notifyChange()
                         }
-                        line.add(0, head)//加头
+                        lineSnake.add(0, head)//加头
 
                         //捕获中断退出贪吃蛇程序
                         try {
