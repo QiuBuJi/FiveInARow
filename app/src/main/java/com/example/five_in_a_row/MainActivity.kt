@@ -610,27 +610,27 @@ class MainActivity : AppCompatActivity() {
 
                 //直线两端的空格子
                 var lineEndBlank = ArrayLine()
-
                 val outLine = ArrayLine()
-                val elements = conditionInternalBlank(linesMyOwn)
-                if (elements.isNotEmpty()) {
-                    outLine.addAll(elements)
-                    logd("1")
+                val myOwn1 = conditionInternalBlank(linesMyOwn)
+                val enemy1 = conditionInternalBlank(linesEnemy)
+                val myOwn2 = conditionXCenter(linesMyOwn)
+                val enemy2 = conditionXCenter(linesEnemy)
+
+                if (myOwn1.isNotEmpty()) {
+                    outLine.addAll(myOwn1)
+                    logd("我方有中间点")
                 }
-                val elements1 = conditionInternalBlank(linesEnemy)
-                if (elements1.isNotEmpty()) {
-                    outLine.addAll(elements1)
-                    logd("2")
+                if (enemy1.isNotEmpty()) {
+                    if (myOwn1.isEmpty()) outLine.addAll(enemy1)
+                    logd("敌方有中间点")
                 }
-                val elements2 = conditionXCenter(linesMyOwn)
-                if (elements2.isNotEmpty()) {
-                    outLine.addAll(elements2)
-                    logd("3")
+                if (myOwn2.isNotEmpty()) {
+                    outLine.addAll(myOwn2)
+                    logd("我方有交叉数据")
                 }
-                val elements3 = conditionXCenter(linesEnemy)
-                if (elements3.isNotEmpty()) {
-                    outLine.addAll(elements3)
-                    logd("4")
+                if (enemy2.isNotEmpty()) {
+                    if (myOwn1.isEmpty()) outLine.addAll(enemy2)
+                    logd("敌方有交叉数据")
                 }
 
                 val myOwnSize = myOwnThreatLine?.size ?: 0
@@ -646,7 +646,7 @@ class MainActivity : AppCompatActivity() {
                     enemyThreat != null && (enemyThreat.size >= 3 || linesMyOwn.isEmpty()) -> {
 
                         //enemyThreat直线长度大于等于3就满足条件，如果它是半阻塞状态则不能满足
-                        val stateOpen = enemyThreat.bockedNumber() == 0//是否为半开闭区间
+                        val stateOpen = enemyThreat.blockedNumber() == 0//是否为半开闭区间
                         val stateLength = enemyThreat.size >= 3 && stateOpen//条件：直线长度大于2，且为开放状态
                         //enemyThreat直线长度>=4,已经迫在眉睫，敌人快赢了！
                         val stateLengthThreat = enemyThreat.size >= 4
@@ -744,6 +744,7 @@ class MainActivity : AppCompatActivity() {
                                     if (isIntrude) myOwnThreatLine!!.getLineEndsBlank()//增强自己
                                     else enemyThreat.getLineEndsBlank()//压制敌人
 
+                                lineEndBlank.removeIf { it.circle.type != TYPE.NONE }
                                 logd("随机状态: ${if (isIntrude) "进攻" else "防御"}")
                             }
                         }
@@ -896,33 +897,40 @@ class MainActivity : AppCompatActivity() {
             thread.start()
         }
 
-        private fun conditionXCenter(linesMyOwn: ArrayLines): ArrayLine {
+        /**两双棋子相交于一点*/
+        private fun conditionXCenter(line: ArrayLines): ArrayLine {
             val outLine = ArrayLine()
             var keep = true
-            val filter = linesMyOwn.filter { it.size == 2 }
+            val filter = line.filter { it.size >= 2 }
             if (filter.isEmpty()) return outLine
 
-            val myType = filter[0][0].circle.type
-            val lineTemp = ArrayLine()
-            for (line in filter) lineTemp.addAll(line.getLineEndsBlank())
+            val type = line[0][0].circle.type
+            val tempBlanks = ArrayLine()
+            for (tempLine in filter) tempBlanks.addAll(tempLine.getLineEndsBlank())//获取所有直线两端的空白格子
 
-            for (circleD in lineTemp) {
-                val blanks = circleD.circle.getSurrounds()
-                blanks.remove(circleD)//去除自己
-                blanks.removeIf1 { it.circle.type != myType }//去除非自己类型的数据
-                val line = ArrayLine()
+            for (circleD in tempBlanks) {
+                val surroundBlanks = circleD.circle.getSurrounds { it.circle.type == type }//要本类型数据
+                val tempLine = ArrayLine()
 
-                for (blank in blanks) {
-                    val directionLine = blank.getDirectionLine { it.circle.type == myType }
-                    if (directionLine.size >= 2) line.add(circleD)
+                //二直线端点相交判断
+                for (blank in surroundBlanks) {
+                    val dirLine = blank.getDirectionLine { it.circle.type == type }
+                    val blockedNum = dirLine.blockedNumber()//不要阻塞的直线
+                    if (dirLine.size >= 2 && blockedNum == 0) tempLine.add(circleD)
                 }
-                if (line.size >= 2) outLine.add(circleD)
+                if (tempLine.size >= 2) outLine.add(circleD)
 
-
-                for ((index, blank) in blanks.withIndex()) {
-                    for (indexTemp in index + 1 until blanks.size) {
-                        if (blank.direction.direS == blanks[indexTemp].direction.direS) {
-                            outLine.add(circleD)
+                //T字型判断
+                for ((index, blank1) in surroundBlanks.withIndex()) {
+                    for (indexTemp in index + 1 until surroundBlanks.size) {
+                        val blank2 = surroundBlanks[indexTemp]
+                        if (blank1.direction.direS == blank2.direction.direS) {
+                            val directionLine1 =
+                                blank1.getDirectionLine { it.circle.type != type.alter }
+                            val directionLine2 =
+                                blank2.getDirectionLine { it.circle.type != type.alter }
+                            val length = directionLine1.size + directionLine2.size
+                            if (length >= 4) outLine.add(circleD)
                             keep = false
                             break
                         }
@@ -936,18 +944,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**直线中间有空格子，下棋继续就会输，判断*/
-        private fun conditionInternalBlank(linesEnemy: ArrayLines): ArrayLine {
-            val qualityLines = ArrayLines()
+        private fun conditionInternalBlank(lines: ArrayLines): ArrayLine {
+            val tempLines = ArrayLines()
             val outLine = ArrayLine()
-            for (line in linesEnemy) qualityLines.add(line.getLineAllBlanks())
+            for (line in lines) tempLines.add(line.getLineAllBlanks())
 
-            for (qualityLine in qualityLines) {
-                val indexOfFirst = qualityLine.indexOfFirst { it.circle.type != TYPE.NONE }
-                val indexOfLast = qualityLine.indexOfLast { it.circle.type != TYPE.NONE }
+            for (line in tempLines) {
+                val indexOfFirst = line.indexOfFirst { it.circle.type != TYPE.NONE }
+                val indexOfLast = line.indexOfLast { it.circle.type != TYPE.NONE }
 
                 val abs = abs(indexOfFirst - indexOfLast) + 1
                 if (abs >= 4) {
-                    for (index in indexOfFirst..indexOfLast) outLine.add(qualityLine[index])
+                    for (index in indexOfFirst..indexOfLast) outLine.add(line[index])
                     outLine.removeIf1 { it.circle.type != TYPE.NONE }
                     if (outLine.isNotEmpty()) break
                 }
@@ -1024,20 +1032,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (qualityLines.isNotEmpty()) {
-                val line = qualityLines[0]
-                var mid = line.dropWhile { it.circle.type == TYPE.NONE }//去掉前面
-                mid = mid.dropLastWhile { it.circle.type == TYPE.NONE }//去掉后面
-                mid = mid.filterNot { it.circle.type != TYPE.NONE }//去掉非空格子
-
-                if (mid.isNotEmpty()) {
-                    logd("选择最佳的一段 ")
-                    lineEndBlank.addAll(mid)
-                } else {
-                    lineEndBlank.addAll(line)
-                    lineEndBlank.removeIf1 { it.circle.type != TYPE.NONE }//去掉非空格子
-                    logd("两端的空白格子 ")
-                }
-
+                qualityLines[0].getReasonableBlank(lineEndBlank)
                 logd("线段: $lineEndBlank")
             }
             //没有增强自己的直线了
@@ -1056,6 +1051,40 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             return true
+        }
+
+        /**获取合理的下棋地点*/
+        private fun ArrayLine.getReasonableBlank(lineEndBlank: ArrayLine) {
+            var strSide: String
+            val temp1 = ArrayLine()
+            val temp2 = ArrayLine()
+            var indexFirst = this.indexOfFirst { it.circle.type != TYPE.NONE }
+            var indexLast = this.indexOfLast { it.circle.type != TYPE.NONE }
+            val midLine = ArrayLine(this.subList(indexFirst, indexLast))
+            midLine.removeIf { it.circle.type != TYPE.NONE }//去掉非空格子
+
+            if (midLine.isEmpty()) {
+                indexFirst--
+                for (index in indexFirst downTo 0) {//获取第一个数据
+                    temp1.add(this[index])
+                    if (temp1.size >= 2) break
+                }
+                indexLast++
+                for (index in indexLast until this.size) {//获取第二个数据
+                    temp2.add(this[index])
+                    if (temp2.size >= 2) break
+                }
+                val outLine = when {
+                    temp1.size <= 1 -> temp2.apply { strSide = "→" }//temp1遇到墙壁了，换temp2的数据
+                    temp2.size <= 1 -> temp1.apply { strSide = "←" }//temp2遇到墙壁了，换temp1的数据
+                    else -> temp1.apply { addAll(temp2);strSide = "㊣" }//都没有遇到墙壁，返回全部数据
+                }
+                lineEndBlank.addAll(outLine)
+                logd("外侧的空白格子：$strSide $outLine")
+            } else {
+                lineEndBlank.addAll(midLine)
+                logd("得到中间的一段：$midLine ")
+            }
         }
 
         private fun <E> ArrayList<E>.removeIf1(action: (E) -> Boolean) {
@@ -1102,9 +1131,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        /**是否一端是阻塞的*/
-        private fun ArrayLine.bockedNumber(): Int {
-            val first = first()
+        /**获取直线两端被阻塞的数量*/
+        private fun ArrayLine.blockedNumber(): Int {
+            if (isEmpty()) return 0
+            val first = CircleD(first())
             var numBlocked = 0
 
             first.traverseDirection {
